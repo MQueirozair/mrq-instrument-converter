@@ -124,7 +124,7 @@
     "publish": {
       "provider": "github",
       "owner": "MQueirozair",
-      "repo": "mrq-multitracks-play",
+      "repo": "mrq-instrument-converter",
       "releaseType": "release"
     }
   }
