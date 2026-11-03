@@ -1,9 +1,9 @@
 {
   "name": "mrq-instrument-converter",
-  "productName": "MRQ - Multitracks Play",
+  "productName": "MRQ Instrument Converter",
   "private": true,
   "version": "0.2.48",
-  "description": "MRQ - Multitracks Play: tocador de multitracks ao vivo para banda/culto.",
+  "description": "MRQ Instrument Converter: conversor de formatos de instrumento (.sf2/.nki/.exs/.syx/Kontakt) para .mrq/.mrqi.",
   "author": "MRQ",
   "main": "dist-electron/electron/main.js",
   "type": "module",
@@ -72,8 +72,8 @@
     "vite": "^5.3.3"
   },
   "build": {
-    "appId": "com.mrq.multitracksplay",
-    "productName": "MRQ - Multitracks Play",
+    "appId": "com.mrq.instrumentconverter",
+    "productName": "MRQ Instrument Converter",
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
