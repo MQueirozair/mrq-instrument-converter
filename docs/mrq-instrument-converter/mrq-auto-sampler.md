@@ -36,6 +36,13 @@ ver limitação de round robin abaixo).
 4. Configure a SAÍDA de áudio do Kontakt pra ir pro loopback escolhido, e
    deixe o monitor de retorno do Kontakt desligado (ou baixo) se quiser
    evitar ouvir a captura em tempo real.
+5. **Windows apenas**: confira em Configurações > Privacidade e segurança >
+   Microfone se "Acesso ao microfone" está ligado E se "Permitir que
+   aplicativos de área de trabalho acessem seu microfone" também está
+   ligado. Sem isso, o pedido de permissão de áudio do Auto Sampler volta
+   negado na hora (erro "Permission dismissed"), sem nem chegar a mostrar
+   um prompt — não é um bug do app, é um bloqueio de privacidade do próprio
+   Windows que se aplica a qualquer app de área de trabalho, não só este.
 
 ## Uso
 
