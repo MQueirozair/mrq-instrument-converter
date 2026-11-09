@@ -1420,6 +1420,40 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .as-device-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 6px 8px; border: 1px solid #5c2a2a; border-radius: var(--radius-sm); background: #2a1414; color: #ffb4b4; font-size: 11px; line-height: 1.4; }
 .as-device-error svg { flex: none; margin-top: 1px; color: #e0b84a; }
 
+/* Teclado visual "Sample Note Range" (ver SampleNoteRangeKeyboard.tsx). */
+.as-keyboard-section h4 { font-weight: 500; font-size: 11.5px; color: var(--text-2); white-space: normal; }
+.as-keyboard-wrap { width: 100%; }
+.as-keyboard-svg { width: 100%; display: block; user-select: none; touch-action: none; }
+.as-kb-rangebar-bg { fill: #1b1e24; }
+.as-kb-rangebar-fill { fill: #3a6ea5; opacity: 0.9; }
+.as-kb-handle { fill: #e8e8e8; opacity: 0.9; }
+.as-kb-white-out { fill: #2a2d33; }
+.as-kb-white-in { fill: #c9ccd1; }
+.as-kb-white-sampled { fill: #4f8ac9; }
+.as-kb-black-out { fill: #16181c; }
+.as-kb-black-in { fill: #45474c; }
+.as-kb-black-sampled { fill: #2f5b8a; }
+.as-kb-octave-label { fill: var(--text-2); font-size: 2.2px; }
+.as-keyboard-legend { display: flex; gap: 14px; margin-top: 6px; font-size: 11px; color: var(--text-2); flex-wrap: wrap; }
+.as-kb-legend-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.as-kb-legend-sampled { background: #4f8ac9; }
+.as-kb-legend-in { background: #c9ccd1; }
+.as-kb-legend-out { background: #2a2d33; }
+
+/* Gráfico de breakpoints de Velocity Response (ver VelocityBreakpointEditor.tsx). */
+.as-velocity-editor { margin-top: 8px; }
+.as-vel-layer-label { fill: #fff; font-size: 8px; opacity: 0.85; }
+.as-vel-breakpoint-label { fill: var(--text-2); font-size: 7.5px; }
+
+/* Medidores de nível L/R ao vivo (ver useInputLevelMeter.ts / LevelMeterBar.tsx). */
+.as-level-meters { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 6px; }
+.as-level-meter-row { display: flex; align-items: center; gap: 6px; }
+.as-level-meter-label { width: 12px; font-size: 11px; color: var(--text-2); text-align: center; }
+.as-level-meter-track { position: relative; flex: 1; height: 8px; border-radius: 3px; background: #1b1e24; overflow: hidden; }
+.as-level-meter-fill { position: absolute; left: 0; top: 0; bottom: 0; transition: width 60ms linear; }
+.as-level-meter-zero-mark { position: absolute; right: 6%; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,0.25); }
+.as-level-meter-db { width: 42px; font-size: 10.5px; color: var(--text-2); text-align: right; }
+
 /* ---------- MRQ Instrument Analyzer ---------- */
 .mrq-analyzer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .mrq-analyzer-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--border); }

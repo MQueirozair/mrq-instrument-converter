@@ -45,6 +45,7 @@ import {
 import { buildSf2Binary, type Sf2ExportZone } from './sf2Export';
 import {
   applyGainDb,
+  bakeAutoLoop,
   computeAutoSamplerKeyRanges,
   findLoopPoints,
   generateAutoSamplerTasks,
@@ -82,6 +83,36 @@ async function getMidiAccess(): Promise<MIDIAccess> {
 export async function listMidiOutputs(): Promise<MidiPortInfo[]> {
   const access = await getMidiAccess();
   return [...access.outputs.values()].map((o) => ({ id: o.id, name: o.name || o.id, manufacturer: o.manufacturer || undefined }));
+}
+
+/**
+ * Toca uma nota curta por MIDI pra pré-ouvir o instrumento — mesmo
+ * comportamento do teclado visual do Auto Sampler do Logic Pro ("click on
+ * the keyboard and a MIDI note is sent so you can hear the instrument you
+ * plan to sample", ver referência em SampleNoteRangeKeyboard.tsx). NÃO usa
+ * `AutoSamplerSession` nem grava nada — é só um atalho pra ouvir, então não
+ * precisa de dispositivo de entrada de áudio configurado, só da porta MIDI.
+ * Falhas são ignoradas silenciosamente (preview é um "nice to have"; um erro
+ * aqui nunca deveria interromper o usuário mexendo na tela de configuração).
+ */
+export async function previewMidiNote(outputId: string, channel: number, note: number, velocity = 100, durationMs = 350): Promise<void> {
+  try {
+    const access = await getMidiAccess();
+    const output = access.outputs.get(outputId);
+    if (!output) return;
+    const ch = channel & 0x0f;
+    const clampedNote = Math.max(0, Math.min(127, Math.round(note)));
+    output.send([0x90 | ch, clampedNote, velocity]);
+    setTimeout(() => {
+      try {
+        output.send([0x80 | ch, clampedNote, 0]);
+      } catch {
+        /* porta pode ter sido desconectada entre o note-on e o note-off — sem problema, é só um preview. */
+      }
+    }, durationMs);
+  } catch {
+    /* ver comentário da função — preview nunca deve travar/quebrar a tela de configuração. */
+  }
 }
 
 export interface AudioInputDeviceInfo {
@@ -169,9 +200,15 @@ export function buildAutoSamplerCompatibilityReport(config: AutoSamplerConfig): 
     });
   }
   if (config.autoLoop !== 'none') {
+    const modeLabel: Record<Exclude<AutoSamplerConfig['autoLoop'], 'none'>, string> = {
+      search: 'Search (corte seco no ponto mais parecido encontrado)',
+      'search-xfade': 'Search With X-Fade (crossfade equal-power gravado na emenda)',
+      'search-rev-xfade': 'Search With Rev X-Fade (crossfade com cópia invertida no tempo gravado na emenda)',
+      bidirectional: 'Bidirectional (trecho forward+reverso concatenado, equivalente a ping-pong quando tocado em loop simples)',
+    };
     report.approximated.push({
       field: 'Pontos de loop',
-      detail: `detectados automaticamente por autocorrelação dentro da janela ${config.autoLoopStartPct}%-${config.autoLoopEndPct}% de cada amostra (ver findLoopPoints em autoSamplerEngine.ts) — uma estimativa, não um ponto de loop definido manualmente por um engenheiro de áudio.`,
+      detail: `modo "${modeLabel[config.autoLoop]}" — ponto de loop encontrado por autocorrelação dentro da janela ${config.autoLoopStartPct}%-${config.autoLoopEndPct}% de cada amostra (ver findLoopPoints/bakeAutoLoop em autoSamplerEngine.ts); uma estimativa automática, não um ponto de loop ajustado manualmente por um engenheiro de áudio. O modo "Penrose Machine" do Logic Pro (ressíntese proprietária) não está disponível aqui — não é um algoritmo documentado publicamente.`,
     });
   }
   return report;
@@ -241,7 +278,15 @@ export class AutoSamplerSession {
         const raw = captured.get(task.id);
         if (!raw) continue;
         const found = findLoopPoints(raw.interleaved, raw.channels, raw.sampleRateHz, options.config.autoLoopStartPct, options.config.autoLoopEndPct);
-        if (found) loopPoints.set(task.id, found);
+        if (!found) continue;
+        // "Bake" o modo escolhido (Search/X-Fade/Rev X-Fade/Bidirectional)
+        // DIRETO no áudio — ver bakeAutoLoop em autoSamplerEngine.ts. Faz os
+        // dois formatos de saída (.mrq e SF2, que só sabe tocar loop
+        // "forward" simples) soarem igual, sem depender de suporte nativo a
+        // crossfade/loop bidirecional em nenhum dos dois players.
+        const baked = bakeAutoLoop(raw.interleaved, raw.channels, raw.sampleRateHz, found, options.config.autoLoop);
+        captured.set(task.id, { ...raw, interleaved: baked.interleaved });
+        loopPoints.set(task.id, { loopStartFrame: baked.loopStartFrame, loopEndFrame: baked.loopEndFrame });
       }
     }
 

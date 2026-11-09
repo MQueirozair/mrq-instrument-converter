@@ -53,6 +53,23 @@ ver limitação de round robin abaixo).
 3. Configure faixa de notas, intervalo de amostragem, sustain/release,
    camadas de velocity, round robin, auto loop e ganho de entrada — os
    mesmos campos do Auto Sampler do Logic Pro.
+   - **Teclado "Sample Note Range"**: clique em qualquer tecla pra ouvir o
+     Kontakt de verdade por MIDI (sem gravar nada); arraste as pontas da
+     barra azul acima do teclado pra ajustar Range Start/Range End (os
+     mesmos valores dos dois dropdowns, só uma forma visual alternativa de
+     mexer neles). Teclas azuis = amostradas de verdade; cinza-claro = dentro
+     da faixa mas preenchidas por interpolação (não têm captura própria);
+     cinza-escuro = fora da faixa.
+   - **Velocity Response "Custom"**: com mais de 1 camada de velocity,
+     aparece um gráfico com uma divisória arrastável entre cada camada —
+     arrastar qualquer uma troca automaticamente a resposta pra "Custom" e
+     passa a usar esses pontos exatos (em vez de uma curva linear/exp/log).
+   - **Medidor de nível L/R**: assim que um dispositivo de entrada é
+     escolhido, dois medidores de barra mostram o nível de áudio chegando
+     de verdade (já com o Input Gain aplicado) — evita ajustar o ganho "no
+     escuro". O medidor usa seu PRÓPRIO stream de monitoramento (não o da
+     gravação) e é desligado automaticamente assim que "Sample" começa, pra
+     não disputar o dispositivo de entrada com a captura de verdade.
 4. Escolha se quer gerar `.mrq`, SF2/SF3, ou os dois (marcados por padrão).
 5. Clique "Sample". O app toca e grava cada nota automaticamente — o
    progresso aparece no rodapé do modal. "Cancelar" interrompe a qualquer
@@ -81,4 +98,15 @@ ver limitação de round robin abaixo).
   original (impossível sem o código-fonte da Apple).
 - **Pontos de loop automáticos**: estimados por autocorrelação + busca de
   menor descontinuidade na janela configurada — uma aproximação razoável,
-  não uma emenda perfeita garantida para todo tipo de timbre.
+  não uma emenda perfeita garantida para todo tipo de timbre. Os modos
+  **Search**, **Search With X-Fade**, **Search With Rev X-Fade** e
+  **Bidirectional** (lista completa do Logic Pro, ver
+  soundonsound.com/techniques/logic-using-auto-sampler) são implementados
+  de verdade — o crossfade/a reversão/a alternância forward-reverso são
+  "gravados" diretamente no áudio capturado (`bakeAutoLoop` em
+  `autoSamplerEngine.ts`), então soam igual tanto no `.mrq` quanto no SF2
+  (que só sabe tocar um loop simples pra frente). O modo **Penrose
+  Machine** do Logic Pro aparece na lista, mas **desabilitado**: é um
+  algoritmo de ressíntese proprietário da Apple/Redmatica, nunca
+  documentado publicamente — reimplementá-lo seria inventar um
+  comportamento parecido e fingir paridade que não existe de verdade.

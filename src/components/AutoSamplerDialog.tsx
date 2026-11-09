@@ -36,6 +36,7 @@ import { basenameOf } from '../audio/rack/converterFormats';
 import { midiNoteLabel } from '../audio/rack/midiNoteNames';
 import type { MrqCompatibilityReport, MrqFileMetadata, MrqFinishResult, MrqInstrumentModel } from '../audio/rack/mrqFormat';
 import {
+  computeVelocityBreakpoints,
   estimateAutoSamplerPlan,
   type AutoSamplerConfig,
   type AutoLoopMode,
@@ -46,11 +47,16 @@ import {
   AutoSamplerSession,
   listAudioInputDevices,
   listMidiOutputs,
+  previewMidiNote,
   requestAudioInputPermission,
   type AudioInputDeviceInfo,
   type AutoSamplerProgress,
   type MidiPortInfo,
 } from '../audio/rack/autoSampler';
+import { useInputLevelMeter } from '../audio/rack/useInputLevelMeter';
+import SampleNoteRangeKeyboard from './SampleNoteRangeKeyboard';
+import VelocityBreakpointEditor from './VelocityBreakpointEditor';
+import LevelMeterBar from './LevelMeterBar';
 import { useStore } from '../state/useStore';
 
 export interface AutoSamplerResult {
@@ -81,6 +87,28 @@ const VELOCITY_RESPONSE_OPTIONS: { value: VelocityResponseCurve; label: string }
   { value: 'log1', label: 'Logarítmica 1' },
   { value: 'log2', label: 'Logarítmica 2' },
   { value: 'log3', label: 'Logarítmica 3' },
+  { value: 'custom', label: 'Custom' },
+];
+
+/** Lista completa do Auto Loop do Logic Pro (ver SoundOnSound: soundonsound.com/techniques/logic-using-auto-sampler).
+ *  "Penrose Machine" fica DESABILITADA de propósito — é um algoritmo de
+ *  ressíntese proprietário da Apple/Redmatica, nunca documentado
+ *  publicamente, então reimplementá-lo seria inventar um comportamento e
+ *  fingir paridade que não existe. Preferimos mostrar a opção (pra deixar
+ *  claro que sabemos que ela existe) com uma explicação, a escondê-la ou
+ *  simular algo parecido por baixo dos panos. */
+const AUTO_LOOP_OPTIONS: { value: AutoLoopMode | 'penrose'; label: string; disabled?: boolean; title?: string }[] = [
+  { value: 'none', label: 'Nenhum' },
+  { value: 'search', label: 'Search (corte seco no ponto mais parecido)' },
+  { value: 'search-xfade', label: 'Search With X-Fade' },
+  { value: 'search-rev-xfade', label: 'Search With Rev X-Fade' },
+  { value: 'bidirectional', label: 'Bidirectional' },
+  {
+    value: 'penrose',
+    label: 'Penrose Machine (indisponível)',
+    disabled: true,
+    title: 'Algoritmo de ressíntese proprietário da Apple/Redmatica, nunca documentado publicamente — não é possível reimplementá-lo de forma fiel, então não fingimos esse modo aqui.',
+  },
 ];
 
 function formatSeconds(totalSeconds: number): string {
@@ -103,6 +131,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   const [releaseTailSeconds, setReleaseTailSeconds] = useState(1);
   const [velocityLayers, setVelocityLayers] = useState(1);
   const [velocityResponse, setVelocityResponse] = useState<VelocityResponseCurve>('linear');
+  const [customVelocityBreakpoints, setCustomVelocityBreakpoints] = useState<number[] | undefined>(undefined);
   const [autoLoop, setAutoLoop] = useState<AutoLoopMode>('none');
   const [autoLoopStartPct, setAutoLoopStartPct] = useState(40);
   const [autoLoopEndPct, setAutoLoopEndPct] = useState(90);
@@ -199,6 +228,38 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Muda o número de camadas invalida qualquer breakpoint customizado
+  // anterior (o motor exige exatamente layers+1 pontos — ver
+  // computeVelocityBreakpoints em autoSamplerEngine.ts) — melhor recomeçar
+  // do zero numa curva padrão do que arriscar mandar um array com o
+  // tamanho errado pro motor.
+  useEffect(() => {
+    setCustomVelocityBreakpoints(undefined);
+    setVelocityResponse((prev) => (prev === 'custom' ? 'linear' : prev));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [velocityLayers]);
+
+  const velocityBreakpoints = useMemo(() => {
+    try {
+      return computeVelocityBreakpoints(velocityLayers, velocityResponse, customVelocityBreakpoints);
+    } catch {
+      return computeVelocityBreakpoints(velocityLayers, 'linear');
+    }
+  }, [velocityLayers, velocityResponse, customVelocityBreakpoints]);
+
+  function handleDragVelocityBreakpoints(next: number[]) {
+    setVelocityResponse('custom');
+    setCustomVelocityBreakpoints(next);
+  }
+
+  function handlePreviewNote(note: number) {
+    if (!midiOutputId) return;
+    void previewMidiNote(midiOutputId, midiChannel - 1, note);
+  }
+
+  const levelMeterEnabled = !running && audioInputDeviceId !== '';
+  const { levels: meterLevels, error: meterError } = useInputLevelMeter(audioInputDeviceId, levelMeterEnabled, inputGainDb);
+
   const loadingDevices = midiLoading || audioLoading;
   const audioPermissionRequested = audioInputs.length > 0 || audioError !== null;
 
@@ -209,6 +270,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       sampleEverySemitones,
       velocityLayers,
       velocityResponse,
+      customVelocityBreakpoints: velocityResponse === 'custom' ? customVelocityBreakpoints : undefined,
       roundRobinCount,
       sustainSeconds,
       releaseTailSeconds,
@@ -223,6 +285,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       sampleEverySemitones,
       velocityLayers,
       velocityResponse,
+      customVelocityBreakpoints,
       roundRobinCount,
       sustainSeconds,
       releaseTailSeconds,
@@ -248,6 +311,9 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     if (!outputMrq && !outputSf2) return 'Escolha pelo menos um formato de saída (.mrq e/ou .sf2).';
     if (autoLoop !== 'none' && (autoLoopStartPct < 0 || autoLoopStartPct >= autoLoopEndPct || autoLoopEndPct > 100)) {
       return 'Auto Loop Start/End precisam satisfazer 0 <= início < fim <= 100.';
+    }
+    if (velocityResponse === 'custom' && (!customVelocityBreakpoints || customVelocityBreakpoints.length !== velocityLayers + 1)) {
+      return 'Arraste os pontos de quebra de Velocity Response (Custom) antes de começar — faltam pontos definidos.';
     }
     return null;
   }
@@ -366,6 +432,26 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
             </div>
           </div>
 
+          <section className="as-section as-keyboard-section">
+            <h4>Sample Note Range — clique numa tecla pra ouvir, arraste as pontas da barra azul pra ajustar a faixa</h4>
+            <SampleNoteRangeKeyboard
+              rangeStartNote={rangeStartNote}
+              rangeEndNote={rangeEndNote}
+              sampleEverySemitones={sampleEverySemitones}
+              onChangeRange={(start, end) => {
+                setRangeStartNote(start);
+                setRangeEndNote(end);
+              }}
+              onPreviewNote={handlePreviewNote}
+              disabled={running}
+            />
+            <div className="as-keyboard-legend">
+              <span><i className="as-kb-legend-swatch as-kb-legend-sampled" /> amostrada de verdade</span>
+              <span><i className="as-kb-legend-swatch as-kb-legend-in" /> dentro da faixa (preenchida por interpolação)</span>
+              <span><i className="as-kb-legend-swatch as-kb-legend-out" /> fora da faixa</span>
+            </div>
+          </section>
+
           <div className="as-grid">
             <section className="as-section">
               <h4>Faixa de notas</h4>
@@ -430,6 +516,14 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                   ))}
                 </select>
               </div>
+              {velocityLayers > 1 && (
+                <VelocityBreakpointEditor
+                  layers={velocityLayers}
+                  breakpoints={velocityBreakpoints}
+                  editable={!running && velocityResponse === 'custom'}
+                  onDrag={handleDragVelocityBreakpoints}
+                />
+              )}
             </section>
 
             <section className="as-section">
@@ -437,10 +531,19 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
               <div className="field-row">
                 <div className="label">Auto Loop</div>
                 <select value={autoLoop} onChange={(e) => setAutoLoop(e.target.value as AutoLoopMode)} disabled={running}>
-                  <option value="none">Nenhum</option>
-                  <option value="search">Buscar</option>
+                  {AUTO_LOOP_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value} disabled={o.disabled} title={o.title}>{o.label}</option>
+                  ))}
                 </select>
               </div>
+              {autoLoop !== 'none' && (
+                <div className="hint" style={{ marginTop: -2, marginBottom: 4 }}>
+                  {autoLoop === 'search' && 'Corte seco no ponto mais parecido encontrado — pode soar como um "pulso" se nenhum ponto perfeito existir.'}
+                  {autoLoop === 'search-xfade' && 'Mesma busca do "Search", com crossfade equal-power gravado na emenda quando não há corte 100% limpo.'}
+                  {autoLoop === 'search-rev-xfade' && 'Crossfade com uma cópia invertida no tempo do próprio loop — preserva melhor o timbre de decay (preferência do autor do artigo da Sound On Sound junto com Bidirectional).'}
+                  {autoLoop === 'bidirectional' && 'Alterna forward/reverso com emendas sempre no mesmo nível — geralmente o loop menos repetitivo (e mais longo).'}
+                </div>
+              )}
               <div className="field-row">
                 <div className="label">Auto Loop Start</div>
                 <input type="number" min={0} max={99} value={autoLoopStartPct} disabled={running || autoLoop === 'none'} onChange={(e) => setAutoLoopStartPct(Number(e.target.value))} /> %
@@ -508,6 +611,15 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                 <input type="range" min={-24} max={24} step={0.5} value={inputGainDb} disabled={running} onChange={(e) => setInputGainDb(Number(e.target.value))} />
                 <div className="hint" style={{ minWidth: 48, textAlign: 'right' }}>{inputGainDb > 0 ? '+' : ''}{inputGainDb.toFixed(1)}dB</div>
               </div>
+              {audioInputDeviceId && !running && (
+                <div className="as-level-meters">
+                  <LevelMeterBar label="L" db={meterLevels.l} />
+                  <LevelMeterBar label="R" db={meterLevels.r} />
+                </div>
+              )}
+              {meterError && (
+                <div className="hint" style={{ color: '#e0b84a' }}>{meterError} (o Input Gain ainda funciona normalmente na captura — só o medidor ao vivo não abriu.)</div>
+              )}
               {audioError && (
                 <div className="as-device-error">
                   <AlertTriangle size={13} />

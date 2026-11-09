@@ -37,7 +37,26 @@ import { computeAutoKeyRanges } from './kontaktCapture';
 
 export type VelocityResponseCurve = 'linear' | 'exp1' | 'exp2' | 'exp3' | 'log1' | 'log2' | 'log3' | 'custom';
 
-export type AutoLoopMode = 'none' | 'search';
+/** Mesma lista (e mesma ordem) do Auto Sampler do Logic Pro — ver
+ *  support.apple.com/guide/logicpro/auto-sampler-controls e o artigo da
+ *  Sound On Sound (soundonsound.com/techniques/logic-using-auto-sampler):
+ *  "Search" (corte seco no ponto mais parecido, sem crossfade), "Search
+ *  With X-Fade" (mesma busca, mas cruza o fim com o início pra suavizar a
+ *  emenda), "Search With Rev X-Fade" (cruza com uma cópia invertida no
+ *  tempo, preserva mais o timbre do decaimento natural do que um crossfade
+ *  comum), e "Bidirectional" (toca o loop alternando pra frente/pra trás —
+ *  aqui conseguido GRAVANDO o trecho pra frente seguido do mesmo trecho
+ *  invertido como UM loop só, que soa igual ao verdadeiro ping-pong quando
+ *  tocado em loop simples pra frente, sem exigir nenhum player com suporte
+ *  a loop bidirecional de verdade).
+ *
+ *  "Penrose Machine" (ressíntese proprietária da Apple/Redmatica) NÃO está
+ *  implementado — não é um algoritmo documentado publicamente, reproduzi-lo
+ *  de verdade exigiria engenharia reversa de um produto comercial fechado.
+ *  Aparece na UI como opção desabilitada, com essa explicação, em vez de
+ *  ser escondido (mesma política de transparência do resto do projeto:
+ *  nunca fingir que algo foi implementado quando não foi). */
+export type AutoLoopMode = 'none' | 'search' | 'search-xfade' | 'search-rev-xfade' | 'bidirectional';
 
 export interface AutoSamplerConfig {
   /** Nota MIDI mais grave a amostrar (convenção C3=60, igual ao resto do app — ver midiNoteNames.ts). */
@@ -421,6 +440,163 @@ export function findLoopPoints(
   const discontinuity = peak > 1e-6 ? rms / peak : rms;
 
   return { loopStartFrame, loopEndFrame, discontinuity };
+}
+
+// ---------------------------------------------------------------------------
+// "Bake" do modo de Auto Loop escolhido — transforma o ponto de loop seco
+// encontrado por `findLoopPoints` (sempre um corte duro, modo "Search") no
+// resultado que os outros modos do Logic produzem, mas gravando o efeito
+// DIRETO no áudio em vez de depender de o player (Rack/SF2) suportar
+// crossfade ou loop bidirecional nativamente — assim os dois formatos de
+// saída (.mrq e SF2) soam igual, mesmo o SF2 só suportando loop "forward"
+// simples. Ver comentário de `AutoLoopMode` pra que cada modo representa.
+// ---------------------------------------------------------------------------
+
+export interface BakedLoop {
+  interleaved: Float32Array;
+  loopStartFrame: number;
+  loopEndFrame: number;
+}
+
+/** Curva de crossfade de potência constante (equal-power) — mesma curva usada em qualquer crossfade de áudio decente, evita o "buraco" de volume no meio de um crossfade linear comum. */
+function equalPowerCrossfade(t: number): { fadeOut: number; fadeIn: number } {
+  const angle = t * (Math.PI / 2);
+  return { fadeOut: Math.cos(angle), fadeIn: Math.sin(angle) };
+}
+
+/** "Search With X-Fade": funde os últimos `xfadeFrames` antes de `loopEndFrame`
+ *  com os `xfadeFrames` que vêm logo depois de `loopStartFrame` — a região
+ *  final do loop passa a já conter uma mistura suave do começo do loop, então
+ *  quando o player faz o corte seco de volta pro `loopStartFrame`, a emenda
+ *  já foi pré-suavizada no próprio áudio (técnica padrão de "pre-blended
+ *  crossfade loop", funciona em qualquer player, mesmo sem suporte nativo a
+ *  crossfade de loop). */
+function bakeSearchXfade(interleaved: Float32Array, channels: number, loop: LoopPointResult, xfadeFrames: number): BakedLoop {
+  const out = interleaved.slice();
+  const frames = Math.min(xfadeFrames, loop.loopEndFrame - loop.loopStartFrame - 1, loop.loopStartFrame);
+  for (let i = 0; i < frames; i += 1) {
+    const t = (i + 1) / frames;
+    const { fadeOut, fadeIn } = equalPowerCrossfade(t);
+    const tailFrame = loop.loopEndFrame - frames + i;
+    const headFrame = loop.loopStartFrame + i;
+    for (let c = 0; c < channels; c += 1) {
+      const tail = interleaved[tailFrame * channels + c];
+      const head = interleaved[headFrame * channels + c];
+      out[tailFrame * channels + c] = tail * fadeOut + head * fadeIn;
+    }
+  }
+  return { interleaved: out, loopStartFrame: loop.loopStartFrame, loopEndFrame: loop.loopEndFrame };
+}
+
+/** "Search With Rev X-Fade": igual ao X-Fade acima, mas em vez de misturar
+ *  com uma cópia direta do começo do loop, mistura com uma cópia INVERTIDA
+ *  no tempo do próprio fim do loop — preserva mais a característica
+ *  timbrística do decaimento natural do som na emenda (mesma ideia descrita
+ *  no artigo da Sound On Sound: "adds in a reversed version of the loop on
+ *  top of the forward version"). */
+function bakeSearchRevXfade(interleaved: Float32Array, channels: number, loop: LoopPointResult, xfadeFrames: number): BakedLoop {
+  const out = interleaved.slice();
+  const frames = Math.min(xfadeFrames, loop.loopEndFrame - loop.loopStartFrame - 1, loop.loopStartFrame);
+  for (let i = 0; i < frames; i += 1) {
+    const t = (i + 1) / frames;
+    const { fadeOut, fadeIn } = equalPowerCrossfade(t);
+    const tailFrame = loop.loopEndFrame - frames + i;
+    // Cópia invertida no tempo da própria região final do loop (em vez do começo).
+    const reversedFrame = loop.loopEndFrame - 1 - i;
+    for (let c = 0; c < channels; c += 1) {
+      const tail = interleaved[tailFrame * channels + c];
+      const reversed = interleaved[reversedFrame * channels + c];
+      out[tailFrame * channels + c] = tail * fadeOut + reversed * fadeIn;
+    }
+  }
+  return { interleaved: out, loopStartFrame: loop.loopStartFrame, loopEndFrame: loop.loopEndFrame };
+}
+
+/** "Bidirectional": concatena o trecho do loop tocado pra frente com o MESMO
+ *  trecho invertido no tempo, formando um loop (forward+reverse) com o
+ *  DOBRO do comprimento original — tocado em loop simples pra frente
+ *  (suportado por qualquer player, .mrq ou SF2), isso é matematicamente
+ *  equivalente a um ping-pong de verdade (forward, backward, forward,
+ *  backward, ...), porque o ciclo forward+reverse se repete de forma
+ *  idêntica a cada volta. Aplica um pequeno crossfade equal-power nas duas
+ *  emendas (início↔fim do trecho invertido, e fim do trecho invertido↔início
+ *  do próximo forward) pra evitar o clique no ponto de inversão exata. */
+function bakeBidirectional(interleaved: Float32Array, channels: number, loop: LoopPointResult, xfadeFrames: number): BakedLoop {
+  const loopFrameCount = loop.loopEndFrame - loop.loopStartFrame;
+  const prefixFrames = loop.loopStartFrame;
+  const suffixFrames = Math.floor(interleaved.length / channels) - loop.loopEndFrame;
+  const totalFrames = prefixFrames + loopFrameCount * 2 + suffixFrames;
+  const out = new Float32Array(totalFrames * channels);
+
+  // Prefixo (tudo antes do loop) sem alteração.
+  out.set(interleaved.subarray(0, prefixFrames * channels), 0);
+
+  // Trecho forward (o loop original, sem alteração).
+  const forwardOffset = prefixFrames * channels;
+  out.set(interleaved.subarray(loop.loopStartFrame * channels, loop.loopEndFrame * channels), forwardOffset);
+
+  // Trecho reverse (o mesmo loop, invertido quadro a quadro).
+  const reverseOffset = (prefixFrames + loopFrameCount) * channels;
+  for (let f = 0; f < loopFrameCount; f += 1) {
+    const srcFrame = loop.loopEndFrame - 1 - f;
+    for (let c = 0; c < channels; c += 1) out[reverseOffset + f * channels + c] = interleaved[srcFrame * channels + c];
+  }
+
+  // Sufixo (release tail gravado depois do ponto de loop) sem alteração.
+  const suffixOffset = (prefixFrames + loopFrameCount * 2) * channels;
+  out.set(interleaved.subarray(loop.loopEndFrame * channels), suffixOffset);
+
+  // Crossfade equal-power nas duas emendas do ciclo forward+reverse (início
+  // do forward ↔ fim do reverse, já que esse ciclo se repete infinitamente).
+  const fadeFrames = Math.min(xfadeFrames, Math.floor(loopFrameCount / 4));
+  if (fadeFrames > 0) {
+    for (let i = 0; i < fadeFrames; i += 1) {
+      const t = (i + 1) / fadeFrames;
+      const { fadeOut, fadeIn } = equalPowerCrossfade(t);
+      const headFrame = prefixFrames + i; // começo do trecho forward
+      const tailFrame = prefixFrames + loopFrameCount * 2 - fadeFrames + i; // fim do trecho reverse
+      for (let c = 0; c < channels; c += 1) {
+        const head = out[headFrame * channels + c];
+        const tail = out[tailFrame * channels + c];
+        const blended = tail * fadeOut + head * fadeIn;
+        out[tailFrame * channels + c] = blended;
+      }
+    }
+  }
+
+  return { interleaved: out, loopStartFrame: prefixFrames, loopEndFrame: prefixFrames + loopFrameCount * 2 };
+}
+
+/** Aplica o modo de Auto Loop escolhido sobre um ponto de loop já encontrado
+ *  por `findLoopPoints` — PURO, sem nenhuma dependência de Web Audio/Tauri,
+ *  testável com buffers sintéticos (ver scripts/test-auto-sampler-engine.mjs).
+ *  `crossfadeMs` default de 25ms é um valor comum pra crossfade de loop (nem
+ *  curto a ponto de ainda clicar, nem longo a ponto de borrar o timbre). */
+export function bakeAutoLoop(
+  interleaved: Float32Array,
+  channels: number,
+  sampleRateHz: number,
+  loop: LoopPointResult,
+  mode: AutoLoopMode,
+  crossfadeMs = 25
+): BakedLoop {
+  const xfadeFrames = Math.max(1, Math.round((crossfadeMs / 1000) * sampleRateHz));
+  switch (mode) {
+    case 'search':
+      return { interleaved, loopStartFrame: loop.loopStartFrame, loopEndFrame: loop.loopEndFrame };
+    case 'search-xfade':
+      return bakeSearchXfade(interleaved, channels, loop, xfadeFrames);
+    case 'search-rev-xfade':
+      return bakeSearchRevXfade(interleaved, channels, loop, xfadeFrames);
+    case 'bidirectional':
+      return bakeBidirectional(interleaved, channels, loop, xfadeFrames);
+    case 'none':
+      throw new Error("bakeAutoLoop não deveria ser chamado com mode 'none' — nenhum loop foi pedido.");
+    default: {
+      const exhaustive: never = mode;
+      throw new Error(`modo de Auto Loop desconhecido: ${exhaustive}`);
+    }
+  }
 }
 
 // re-exporta pra quem só importa daqui (evita ter que saber que a função mora em kontaktCapture.ts).

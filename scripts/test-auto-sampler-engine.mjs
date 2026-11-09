@@ -46,6 +46,7 @@ const {
   trimLeadingSilence,
   trimTrailingSilence,
   findLoopPoints,
+  bakeAutoLoop,
 } = await compileToNode('src/audio/rack/autoSamplerEngine.ts');
 
 let passed = 0;
@@ -282,6 +283,95 @@ check('findLoopPoints devolve null quando a janela de busca é pequena demais', 
   const buf = new Float32Array(100).fill(0.5);
   const result = findLoopPoints(buf, 1, sr, 0, 100);
   assert.equal(result, null);
+});
+
+// ---------------------------------------------------------------------------
+// bakeAutoLoop — os 4 modos de Auto Loop do Logic Pro (Search/X-Fade/Rev
+// X-Fade/Bidirectional), gravados diretamente no áudio (ver comentário de
+// AutoLoopMode em autoSamplerEngine.ts). Buffer estéreo sintético: canal L
+// é uma rampa crescente, canal R uma rampa decrescente — dá pra conferir
+// que os dois canais são tratados de forma independente e consistente.
+// ---------------------------------------------------------------------------
+
+const SR = 44100;
+function makeStereoRamp(frames) {
+  const buf = new Float32Array(frames * 2);
+  for (let f = 0; f < frames; f += 1) {
+    buf[f * 2] = f / frames; // L: 0 -> ~1
+    buf[f * 2 + 1] = 1 - f / frames; // R: ~1 -> 0
+  }
+  return buf;
+}
+const RAMP_FRAMES = 2000;
+const RAMP = makeStereoRamp(RAMP_FRAMES);
+const SYNTH_LOOP = { loopStartFrame: 300, loopEndFrame: 1700, discontinuity: 0.5 };
+
+check('bakeAutoLoop "search": devolve os mesmos pontos de loop e NÃO altera o áudio', () => {
+  const baked = bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'search');
+  assert.equal(baked.loopStartFrame, SYNTH_LOOP.loopStartFrame);
+  assert.equal(baked.loopEndFrame, SYNTH_LOOP.loopEndFrame);
+  assert.equal(baked.interleaved, RAMP, 'modo "search" não deveria copiar/alterar o buffer');
+});
+
+check('bakeAutoLoop "none" lança erro (não deveria nunca ser chamado com esse modo)', () => {
+  assert.throws(() => bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'none'));
+});
+
+check('bakeAutoLoop "search-xfade": mesmo comprimento/pontos de loop, mas a região antes do fim do loop muda de verdade', () => {
+  const baked = bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'search-xfade', 10);
+  assert.equal(baked.loopStartFrame, SYNTH_LOOP.loopStartFrame);
+  assert.equal(baked.loopEndFrame, SYNTH_LOOP.loopEndFrame);
+  assert.equal(baked.interleaved.length, RAMP.length);
+  // Frame logo antes do loopEndFrame: no original é quase puro "tail" (rampa
+  // original); depois do crossfade deve ter se misturado com o começo do
+  // loop (valor diferente do original, mas ainda dentro da faixa [0,1]).
+  const frame = SYNTH_LOOP.loopEndFrame - 1;
+  const originalL = RAMP[frame * 2];
+  const bakedL = baked.interleaved[frame * 2];
+  assert.notEqual(bakedL, originalL, 'a amostra bem antes do fim do loop deveria ter sido alterada pelo crossfade');
+  assert.ok(bakedL >= -1 && bakedL <= 1, 'crossfade equal-power não deveria estourar a faixa [-1,1] numa rampa [0,1]');
+  // Frames bem longe da emenda (início do buffer) não deveriam ter sido tocados.
+  assert.equal(baked.interleaved[0], RAMP[0]);
+});
+
+check('bakeAutoLoop "search-rev-xfade": mesmo comprimento/pontos de loop, região final muda e usa uma mistura com o próprio trecho invertido', () => {
+  const baked = bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'search-rev-xfade', 10);
+  assert.equal(baked.loopStartFrame, SYNTH_LOOP.loopStartFrame);
+  assert.equal(baked.loopEndFrame, SYNTH_LOOP.loopEndFrame);
+  assert.equal(baked.interleaved.length, RAMP.length);
+  const frame = SYNTH_LOOP.loopEndFrame - 1;
+  assert.notEqual(baked.interleaved[frame * 2], RAMP[frame * 2]);
+  // Rev X-Fade e X-Fade devem produzir resultados DIFERENTES entre si (uma usa o começo do loop, a outra usa o próprio fim invertido).
+  const xfade = bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'search-xfade', 10);
+  assert.notEqual(baked.interleaved[frame * 2], xfade.interleaved[frame * 2]);
+});
+
+check('bakeAutoLoop "bidirectional": dobra o trecho do loop (forward + reverso) e preserva prefixo/sufixo', () => {
+  const baked = bakeAutoLoop(RAMP, 2, SR, SYNTH_LOOP, 'bidirectional', 10);
+  const loopFrameCount = SYNTH_LOOP.loopEndFrame - SYNTH_LOOP.loopStartFrame;
+  const prefixFrames = SYNTH_LOOP.loopStartFrame;
+  const suffixFrames = RAMP_FRAMES - SYNTH_LOOP.loopEndFrame;
+  const expectedTotalFrames = prefixFrames + loopFrameCount * 2 + suffixFrames;
+
+  assert.equal(baked.interleaved.length, expectedTotalFrames * 2);
+  assert.equal(baked.loopStartFrame, prefixFrames);
+  assert.equal(baked.loopEndFrame, prefixFrames + loopFrameCount * 2);
+
+  // Prefixo intacto.
+  for (let f = 0; f < prefixFrames; f += 10) {
+    assert.equal(baked.interleaved[f * 2], RAMP[f * 2]);
+  }
+  // Meio do trecho forward (longe das emendas com crossfade) bate com o original.
+  const midForwardOffset = prefixFrames + Math.floor(loopFrameCount / 2);
+  const midForwardOriginal = SYNTH_LOOP.loopStartFrame + Math.floor(loopFrameCount / 2);
+  assert.equal(baked.interleaved[midForwardOffset * 2], RAMP[midForwardOriginal * 2]);
+  // Meio do trecho reverso bate com o original invertido no tempo.
+  const midReverseOffset = prefixFrames + loopFrameCount + Math.floor(loopFrameCount / 2);
+  const midReverseOriginal = SYNTH_LOOP.loopEndFrame - 1 - Math.floor(loopFrameCount / 2);
+  assert.equal(baked.interleaved[midReverseOffset * 2], RAMP[midReverseOriginal * 2]);
+  // Sufixo intacto (começa logo depois do trecho dobrado).
+  const suffixOffset = prefixFrames + loopFrameCount * 2;
+  assert.equal(baked.interleaved[suffixOffset * 2], RAMP[SYNTH_LOOP.loopEndFrame * 2]);
 });
 
 console.log(`\n${passed} teste(s) passaram.`);
