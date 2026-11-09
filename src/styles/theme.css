@@ -1417,6 +1417,8 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .as-section .field-row { padding: 6px 0; }
 .as-section input[type='number'] { width: 70px; }
 .as-section input[type='text'] { width: 100%; }
+.as-device-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 6px 8px; border: 1px solid #5c2a2a; border-radius: var(--radius-sm); background: #2a1414; color: #ffb4b4; font-size: 11px; line-height: 1.4; }
+.as-device-error svg { flex: none; margin-top: 1px; color: #e0b84a; }
 
 /* ---------- MRQ Instrument Analyzer ---------- */
 .mrq-analyzer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
