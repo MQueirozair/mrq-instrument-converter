@@ -1409,6 +1409,15 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .kc-footer-error { color: #ff5577; font-size: 12px; }
 .kc-footer-progress { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-1); }
 
+/* Auto Sampler (ver AutoSamplerDialog.tsx) — reaproveita .modal/.kc-disclaimer/.kc-footer/.field-row já existentes, só adiciona o grid de seções. */
+.as-modal .modal-body { flex-direction: column; padding: 14px 20px 18px; gap: 14px; overflow-y: auto; }
+.as-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+.as-section { border: 1px solid var(--border); border-radius: var(--radius-md); padding: 10px 12px; }
+.as-section h4 { margin: 0 0 6px; font-size: 12.5px; color: var(--text-1); display: flex; align-items: center; }
+.as-section .field-row { padding: 6px 0; }
+.as-section input[type='number'] { width: 70px; }
+.as-section input[type='text'] { width: 100%; }
+
 /* ---------- MRQ Instrument Analyzer ---------- */
 .mrq-analyzer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .mrq-analyzer-tabs { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 10px 0; border-bottom: 1px solid var(--border); }

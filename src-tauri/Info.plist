@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	Mesclado automaticamente no Info.plist do app pelo Tauri v2 durante
+	`tauri build` no macOS (arquivo lido de src-tauri/Info.plist por
+	convenção). Necessário pro Auto Sampler
+	(src/audio/rack/autoSampler.ts) conseguir usar
+	navigator.mediaDevices.getUserMedia() pra gravar a entrada de áudio
+	(dispositivo de loopback configurado pelo usuário, ex.: BlackHole) —
+	sem essa chave o WKWebView recusa a permissão sem nem mostrar o
+	prompt do sistema, e o macOS pode inclusive encerrar o processo por
+	acessar uma API protegida por privacidade sem declarar o motivo.
+	-->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>O MRQ Instrument Converter usa a entrada de áudio selecionada (ex.: um dispositivo de loopback como o BlackHole) para gravar automaticamente as notas tocadas pelo Kontakt durante o Auto Sampler. Nenhum áudio é enviado para fora do seu computador.</string>
+</dict>
+</plist>

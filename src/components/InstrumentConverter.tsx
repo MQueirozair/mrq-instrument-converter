@@ -74,6 +74,7 @@ import {
 import MrqInstrumentAnalyzer, { type AnalyzerSource } from './MrqInstrumentAnalyzer';
 import MappingEditor from './MappingEditor';
 import KontaktCaptureDialog, { type KontaktCaptureResult } from './KontaktCaptureDialog';
+import AutoSamplerDialog, { type AutoSamplerResult } from './AutoSamplerDialog';
 import { useStore } from '../state/useStore';
 import { isTauriRuntime } from '../runtimeEnv';
 
@@ -107,7 +108,13 @@ interface QueueItem {
    *  avulso de cima — já nasce com `status: 'converted'` (o `.mrq` já foi
    *  gravado dentro do diálogo) e `format: null` (não é um formato de
    *  origem reconhecido por extensão, é uma captura de áudio renderizado). */
-  captureKind?: 'kontakt-audio';
+  captureKind?: 'kontakt-audio' | 'auto-sampler';
+  /** Só preenchido quando `captureKind === 'auto-sampler'` e o usuário também
+   *  marcou "gerar SF2/SF3" — a fila só sabe inspecionar/pré-escutar `.mrq`,
+   *  então o SF2 nunca entra no mapeamento da fila, só é reportado aqui pra
+   *  mostrar o caminho do arquivo na pré-visualização (ver trecho
+   *  "Sample Rate/Instrumento" da coluna de pré-visualização). */
+  sf2SiblingPath?: string;
   /** Mapeamento editado pelo usuário no Editor de Mapeamento (botão
    *  "Editar mapeamento" na faixa de pré-visualização) — ver
    *  `MappingEditor.tsx`. Quando presente, `convertItem` passa isto como
@@ -130,6 +137,10 @@ interface QueueItem {
  *  áudio Kontakt já nasce convertida (não há nada pra reconverter aqui). */
 function formatSupportsMappingEdits(item: QueueItem): boolean {
   return !item.captureKind && (item.format === 'syx' || item.format === 'exs');
+}
+
+function captureKindLabel(kind: 'kontakt-audio' | 'auto-sampler'): string {
+  return kind === 'auto-sampler' ? 'Auto Sampler (Kontakt)' : 'Captura de áudio Kontakt';
 }
 
 function mappingPersistNote(item: QueueItem): string {
@@ -177,6 +188,7 @@ function InstrumentConverterInner() {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
+  const [autoSamplerDialogOpen, setAutoSamplerDialogOpen] = useState(false);
   const [mappingEditorItemId, setMappingEditorItemId] = useState<string | null>(null);
   const pushToast = useStore((s) => s.pushToast);
 
@@ -198,6 +210,28 @@ function InstrumentConverterInner() {
     setQueue((prev) => [...prev, item]);
     setSelectedId(item.id);
     setCaptureDialogOpen(false);
+  }
+
+  function handleAutoSamplerImported(result: AutoSamplerResult) {
+    const item: QueueItem = {
+      id: makeId(),
+      path: result.convertedPath,
+      fileName: result.fileName,
+      format: null,
+      magicWarning: null,
+      status: 'converted',
+      instrument: result.instrument,
+      compatibility: result.compatibility,
+      convertedPath: result.convertedPath,
+      convertedFinish: result.convertedFinish,
+      convertedMetadata: result.convertedMetadata,
+      captureKind: 'auto-sampler',
+      sf2SiblingPath: result.sf2Path,
+    };
+    setQueue((prev) => [...prev, item]);
+    setSelectedId(item.id);
+    setAutoSamplerDialogOpen(false);
+    if (result.sf2Path) pushToast(`SoundFont (.sf2) também gerado em: ${result.sf2Path}`);
   }
 
   const selected = queue.find((q) => q.id === selectedId) ?? null;
@@ -352,8 +386,10 @@ function InstrumentConverterInner() {
     if (!selected || !selected.instrument || !selected.compatibility) return null;
     return {
       label: selected.fileName,
-      sourceFormatLabel: selected.captureKind === 'kontakt-audio'
-        ? 'Captura de áudio Kontakt (WAV renderizado)'
+      sourceFormatLabel: selected.captureKind
+        ? selected.captureKind === 'kontakt-audio'
+          ? 'Captura de áudio Kontakt (WAV renderizado)'
+          : 'Auto Sampler (Kontakt tocado/gravado ao vivo)'
         : selected.format
           ? FORMAT_LABELS[selected.format]
           : selected.fileName,
@@ -383,6 +419,9 @@ function InstrumentConverterInner() {
           </div>
           <button className="btn ghost" onClick={() => setCaptureDialogOpen(true)}>
             <Upload size={14} /> Importar instrumento renderizado pelo Kontakt…
+          </button>
+          <button className="btn ghost" onClick={() => setAutoSamplerDialogOpen(true)}>
+            <Settings2 size={14} /> Auto Sampler (tocar e gravar o Kontakt automaticamente)…
           </button>
           <div className="converter-queue-list">
             {queue.length === 0 && <p className="mrq-tab-hint">Nenhum arquivo na fila ainda.</p>}
@@ -436,6 +475,9 @@ function InstrumentConverterInner() {
       {captureDialogOpen && (
         <KontaktCaptureDialog onClose={() => setCaptureDialogOpen(false)} onImported={handleCaptureImported} />
       )}
+      {autoSamplerDialogOpen && (
+        <AutoSamplerDialog onClose={() => setAutoSamplerDialogOpen(false)} onImported={handleAutoSamplerImported} />
+      )}
       {mappingEditorItemId &&
         (() => {
           const item = queue.find((q) => q.id === mappingEditorItemId);
@@ -443,7 +485,7 @@ function InstrumentConverterInner() {
           return (
             <MappingEditor
               fileName={item.fileName}
-              formatLabel={item.captureKind === 'kontakt-audio' ? 'Captura de áudio Kontakt' : item.format ? FORMAT_LABELS[item.format] : ''}
+              formatLabel={item.captureKind ? captureKindLabel(item.captureKind) : item.format ? FORMAT_LABELS[item.format] : ''}
               instrument={item.editedInstrument ?? item.instrument}
               canPersist={formatSupportsMappingEdits(item)}
               persistNote={mappingPersistNote(item)}
@@ -640,7 +682,7 @@ function PreviewStrip({ item, onConvert, onOpenMapping }: { item: QueueItem; onC
     <div className="converter-preview-strip">
       <div className="converter-preview-info">
         <strong>{item.instrument?.name || item.fileName}</strong>
-        <span>{item.captureKind === 'kontakt-audio' ? 'Captura de áudio Kontakt' : item.format ? FORMAT_LABELS[item.format] : ''}</span>
+        <span>{item.captureKind ? captureKindLabel(item.captureKind) : item.format ? FORMAT_LABELS[item.format] : ''}</span>
         {statusBadge(item)}
       </div>
       <div className="converter-preview-actions">

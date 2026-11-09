@@ -1,6 +1,6 @@
 [package]
 name = "mrq-instrument-converter"
-version = "0.1.1"
+version = "0.2.0"
 description = "MRQ - Multitracks Play: tocador de multitracks ao vivo para banda/culto."
 authors = ["MRQ"]
 edition = "2021"
@@ -73,6 +73,16 @@ nord-format = "0.8"
 # `pcm`/`adpcm` já vêm habilitados por padrão; `aiff` e `mp3` precisam ser
 # pedidos explicitamente.
 symphonia = { version = "0.6", features = ["aiff", "mp3"] }
+
+# Auto Sampler (src/audio/rack/autoSampler.ts) grava áudio ao vivo via
+# getUserMedia — no Linux o WebKitGTK recusa isso por padrão sem o app
+# liberar explicitamente a permissão (ver src-tauri/src/linux_media.rs).
+# Mesma versão/feature que o `wry` (usado pelo Tauri) já linka internamente
+# — não é uma dependência nova "por fora", só expõe a mesma lib pra chamar
+# `connect_permission_request`/`settings()` a partir do nosso código.
+[target.'cfg(target_os = "linux")'.dependencies]
+gtk = "0.18"
+webkit2gtk = { version = "2.0", features = ["v2_40"] }
 
 [features]
 # Permite rodar sem o bundle de produção durante o dev, usando o dev-server do Vite.

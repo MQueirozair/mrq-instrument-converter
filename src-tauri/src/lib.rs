@@ -1,5 +1,7 @@
 mod fsops;
 mod importers;
+#[cfg(target_os = "linux")]
+mod linux_media;
 mod logging;
 mod migration;
 mod mrq;
@@ -153,6 +155,18 @@ pub fn run() {
 
             let remote_manager = remote::new_manager(app.handle().clone(), static_dir);
             app.manage(remote_manager);
+
+            // Auto Sampler (ver src/audio/rack/autoSampler.ts) precisa gravar
+            // áudio ao vivo via getUserMedia — no Linux (WebKitGTK) isso só
+            // funciona se o app liberar explicitamente a permissão (ver
+            // linux_media.rs pro porquê). Windows/macOS não precisam disso:
+            // WebView2 e WKWebView já mostram prompt nativo sozinhos.
+            #[cfg(target_os = "linux")]
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.with_webview(|webview| {
+                    linux_media::allow_user_media(&webview.inner());
+                });
+            }
 
             let osc_manager = osc::new_manager(app.handle().clone());
             app.manage(osc_manager);
