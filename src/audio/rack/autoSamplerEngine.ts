@@ -275,6 +275,37 @@ export function applyGainDb(interleaved: Float32Array, db: number): Float32Array
   return out;
 }
 
+/**
+ * Pico de amplitude (0..1) do buffer INTEIRO — usado só pra diagnóstico
+ * pós-captura (ver `isCaptureSilent` abaixo), não tem nada a ver com o
+ * `frameAbsMax` usado pelo corte de silêncio no início/fim.
+ */
+export function peakAmplitude(interleaved: Float32Array): number {
+  let max = 0;
+  for (let i = 0; i < interleaved.length; i += 1) {
+    const v = Math.abs(interleaved[i]);
+    if (v > max) max = v;
+  }
+  return max;
+}
+
+/**
+ * true quando uma captura inteira nunca passou de um limiar bem baixo
+ * (-50dBFS por padrão) — ou seja, o Auto Sampler gravou silêncio digital
+ * puro (ruído de piso, no máximo) a captura inteira. Isso sozinho não é
+ * erro NENHUM pro writer (um `.mrq`/SF2 com zonas silenciosas é um arquivo
+ * perfeitamente válido) — mas é o sintoma mais comum e mais confuso de "o
+ * Kontakt não tocou as notas MIDI" ou "a entrada de áudio não está
+ * recebendo nada do Kontakt": o Auto Sampler não tem como saber se o
+ * Kontakt respondeu ou não ao MIDI, só grava fielmente o que chegou pelo
+ * dispositivo de entrada escolhido — então usamos isso como um sinal
+ * indireto pra avisar o usuário, em vez de deixar passar batido como um
+ * "sucesso" de 9 amostras mudas.
+ */
+export function isCaptureSilent(interleaved: Float32Array, thresholdLinear = 0.003): boolean {
+  return peakAmplitude(interleaved) < thresholdLinear;
+}
+
 /** Amplitude de pico (0..1) dentro de um frame (todos os canais), usada pelas funções de corte de silêncio abaixo. */
 function frameAbsMax(interleaved: Float32Array, channels: number, frame: number): number {
   let max = 0;

@@ -47,6 +47,8 @@ const {
   trimTrailingSilence,
   findLoopPoints,
   bakeAutoLoop,
+  isCaptureSilent,
+  peakAmplitude,
 } = await compileToNode('src/audio/rack/autoSamplerEngine.ts');
 
 let passed = 0;
@@ -372,6 +374,33 @@ check('bakeAutoLoop "bidirectional": dobra o trecho do loop (forward + reverso) 
   // Sufixo intacto (começa logo depois do trecho dobrado).
   const suffixOffset = prefixFrames + loopFrameCount * 2;
   assert.equal(baked.interleaved[suffixOffset * 2], RAMP[SYNTH_LOOP.loopEndFrame * 2]);
+});
+
+// ---------------------------------------------------------------------------
+// isCaptureSilent/peakAmplitude — diagnóstico pós-captura usado por
+// autoSampler.ts pra avisar o usuário quando o Kontakt provavelmente não
+// respondeu ao MIDI (ver AutoSamplerRunResult.silentCaptureCount).
+// ---------------------------------------------------------------------------
+
+check('peakAmplitude acha o pico de verdade (positivo ou negativo) do buffer inteiro', () => {
+  const buf = new Float32Array([0, 0.01, -0.3, 0.02, 0.15]);
+  assert.ok(Math.abs(peakAmplitude(buf) - 0.3) < 1e-6);
+});
+
+check('isCaptureSilent true pra um buffer todo zero (silêncio digital puro)', () => {
+  const buf = new Float32Array(1000);
+  assert.equal(isCaptureSilent(buf), true);
+});
+
+check('isCaptureSilent true pra ruído de piso bem baixo (abaixo do limiar padrão)', () => {
+  const buf = new Float32Array(1000).fill(0.001); // bem abaixo do limiar padrão (0.003)
+  assert.equal(isCaptureSilent(buf), true);
+});
+
+check('isCaptureSilent false assim que UM frame passa do limiar (nem que seja só um transiente curto)', () => {
+  const buf = new Float32Array(1000).fill(0);
+  buf[500] = 0.5; // um pico de verdade no meio, resto silêncio
+  assert.equal(isCaptureSilent(buf), false);
 });
 
 console.log(`\n${passed} teste(s) passaram.`);

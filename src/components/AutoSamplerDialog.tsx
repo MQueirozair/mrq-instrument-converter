@@ -371,6 +371,15 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       );
 
       pushToast(`Auto Sampler concluído: ${result.capturedCount} amostra(s) capturada(s).`);
+      if (result.silentCaptureCount > 0) {
+        const todasSilenciosas = result.silentCaptureCount === result.capturedCount;
+        pushToast(
+          todasSilenciosas
+            ? `Atenção: as ${result.capturedCount} capturas vieram em SILÊNCIO (nenhum sinal de áudio acima do ruído de piso). O Kontakt provavelmente não recebeu as notas MIDI (confira a porta/canal MIDI e se o Kontakt está escutando essa porta) OU a entrada de áudio escolhida não está roteada de verdade pra saída do Kontakt (confira o driver de loopback). O arquivo gerado existe, mas só tem zonas mudas.`
+            : `Atenção: ${result.silentCaptureCount} de ${result.capturedCount} capturas vieram em silêncio — confira se o Kontakt respondeu a essas notas específicas e se a rota de áudio (loopback) ficou estável durante toda a gravação.`,
+          'error'
+        );
+      }
       if (result.sf2Path && roundRobinCount > 1) {
         pushToast(
           'Aviso: o formato SF2 não tem alternância de round robin nativa — as variações geradas vão tocar todas sobrepostas ao mesmo tempo na maioria dos sintetizadores SF2 (o .mrq, se gerado, alterna normalmente no Rack).',

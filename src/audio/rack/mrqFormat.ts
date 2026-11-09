@@ -249,7 +249,19 @@ export function mrqBuilderAddSample(
   sampleRateHz: number,
   channels: number
 ): Promise<MrqSampleIndexEntry> {
-  return invoke('mrq_builder_add_sample', { sessionId, sampleId, source, sampleRateHz, channels });
+  // O `invoke` do Tauri serializa os argumentos como JSON puro (fora o
+  // caso especial de ArrayBuffer/Uint8Array cru) — um Float32Array ou
+  // Int32Array passado direto NÃO vira um array JSON, vira um objeto tipo
+  // `{"0":..,"1":..}` (é assim que `JSON.stringify` trata qualquer
+  // TypedArray que não seja Uint8Array), e o lado Rust (`serde`, que espera
+  // `Vec<i32>`/`Vec<f32>`) rejeita com "invalid type: map, expected a
+  // sequence". Normaliza SEMPRE pra um array plano aqui, uma única vez,
+  // pra nenhum chamador (presente ou futuro) precisar lembrar disso.
+  const normalizedSource: MrqSampleSourceInput =
+    source.kind === 'integerPcm'
+      ? { ...source, interleaved: ArrayBuffer.isView(source.interleaved) ? Array.from(source.interleaved) : source.interleaved }
+      : { ...source, interleaved: ArrayBuffer.isView(source.interleaved) ? Array.from(source.interleaved) : source.interleaved };
+  return invoke('mrq_builder_add_sample', { sessionId, sampleId, source: normalizedSource, sampleRateHz, channels });
 }
 
 export function mrqBuilderFinish(sessionId: string): Promise<MrqFinishResult> {

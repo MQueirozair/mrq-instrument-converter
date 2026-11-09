@@ -49,6 +49,7 @@ import {
   computeAutoSamplerKeyRanges,
   findLoopPoints,
   generateAutoSamplerTasks,
+  isCaptureSilent,
   trimLeadingSilence,
   trimTrailingSilence,
   INTER_TASK_GAP_SECONDS,
@@ -187,6 +188,12 @@ export interface AutoSamplerMrqOutput {
 
 export interface AutoSamplerRunResult {
   capturedCount: number;
+  /** Quantas das capturas vieram silenciosas (pico < -50dBFS a captura
+   *  inteira) — ver `isCaptureSilent` em autoSamplerEngine.ts. O Auto
+   *  Sampler não tem como confirmar se o Kontakt respondeu de verdade ao
+   *  MIDI; isso é o sinal indireto mais confiável de "a nota não tocou" ou
+   *  "a entrada de áudio não está recebendo nada do Kontakt". */
+  silentCaptureCount: number;
   mrq?: AutoSamplerMrqOutput;
   sf2Path?: string;
 }
@@ -306,7 +313,12 @@ export class AutoSamplerSession {
       }
     }
 
-    const result: AutoSamplerRunResult = { capturedCount: captured.size };
+    let silentCaptureCount = 0;
+    for (const raw of captured.values()) {
+      if (isCaptureSilent(raw.interleaved)) silentCaptureCount += 1;
+    }
+
+    const result: AutoSamplerRunResult = { capturedCount: captured.size, silentCaptureCount };
     const lastTask = tasks[tasks.length - 1];
 
     if (options.outputs.mrq) {

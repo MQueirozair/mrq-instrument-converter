@@ -85,6 +85,33 @@ ver limitação de round robin abaixo).
    conversor pra inspeção/pré-escuta; o caminho do `.sf2` (se gerado) é
    reportado por um aviso.
 
+## "Capturei tudo mas ficou tudo em silêncio" / "o Kontakt não tocou as notas"
+
+O Auto Sampler não tem nenhuma forma de confirmar se o Kontakt respondeu de
+verdade a cada nota MIDI — ele só grava fielmente o que chegar pelo
+dispositivo de entrada escolhido, durante o tempo configurado, não importa
+se isso é música ou silêncio digital puro. Se TODAS (ou a maioria) das
+capturas vierem silenciosas, o app agora avisa isso explicitamente ao
+final da execução (toast vermelho "as N capturas vieram em SILÊNCIO...").
+Nesse caso, confira nesta ordem:
+
+1. **A porta MIDI está certa E o Kontakt está escutando ela?** Abra as
+   configurações de MIDI do Kontakt standalone e confirme que a porta
+   virtual escolhida no Auto Sampler aparece marcada/ativa lá dentro — ter
+   a porta só criada no sistema operacional não é suficiente, o Kontakt
+   também precisa estar configurado pra escutar nela.
+2. **O canal MIDI bate?** Se o Kontakt (ou um Multi dentro dele) só
+   escuta um canal específico, o canal escolhido no Auto Sampler precisa
+   ser o mesmo.
+3. **A saída de áudio do Kontakt está mesmo roteada pro loopback, e o
+   loopback é o dispositivo de entrada escolhido aqui?** Teste tocando uma
+   nota manualmente no teclado virtual do Kontakt (ou pelo teclado visual
+   do próprio Auto Sampler, clicando numa tecla — ver seção acima) e
+   confira se o medidor de nível L/R do Auto Sampler reage.
+4. **O monitor de retorno do Kontakt está mutado?** Não afeta a captura em
+   si (o loopback captura antes do monitor), mas é um sinal rápido de que a
+   rota de áudio está ou não realmente ativa.
+
 ## Limitações conhecidas
 
 - **Round robin + SF2**: o formato SoundFont 2 não tem nenhum mecanismo
