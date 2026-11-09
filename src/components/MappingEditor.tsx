@@ -14,11 +14,11 @@
  * modelo (nunca mexem no item da fila até clicar em "Salvar edições").
  *
  * HONESTIDADE SOBRE QUANDO AS EDIÇÕES REALMENTE VÃO PRO .mrq FINAL: pra
- * três dos formatos aceitos (.syx DX7, .nki Kontakt, .exs Logic EXS24) a
- * conversão já roda inteiramente no WebView e monta o `MrqInstrumentModel`
- * localmente antes de chamar `mrqBuilderBegin` — pra esses, o modelo
- * editado aqui é usado de verdade na conversão (ver `overrideInstrument`
- * em converterFormats.ts/nkiImport.ts/exsImport.ts/syxImport.ts). Pros
+ * dois dos formatos aceitos (.syx DX7, .exs Logic EXS24) a conversão já
+ * roda inteiramente no WebView e monta o `MrqInstrumentModel` localmente
+ * antes de chamar `mrqBuilderBegin` — pra esses, o modelo editado aqui é
+ * usado de verdade na conversão (ver `overrideInstrument` em
+ * converterFormats.ts/exsImport.ts/syxImport.ts). Pros
  * demais formatos (SF2/SF3, NPNO/NSMP, WAV/AIFF/FLAC/MP3/OGG) a conversão
  * inteira roda num único comando Rust opaco (`mrq_convert_*_to_mrq`) que
  * reconstrói o modelo do zero a partir do arquivo de origem — ainda não

@@ -60,7 +60,6 @@ import {
   readFileHeaderBytes,
   sniffMagicBytes,
   type ConverterFormatId,
-  type NkiUnresolvedSample,
   type ExsUnresolvedSample,
 } from '../audio/rack/converterFormats';
 import {
@@ -94,10 +93,10 @@ interface QueueItem {
   convertedPath?: string;
   convertedFinish?: MrqFinishResult;
   convertedMetadata?: MrqFileMetadata;
-  /** Só preenchido pra `.nki`/`.exs` (ver ConverterInspection.unresolved) —
+  /** Só preenchido pra `.exs` (ver ConverterInspection.unresolved) —
    *  lista estruturada das amostras que não resolveram, pra oferecer
    *  "escolher pasta da biblioteca" quando `reason === 'not-found'`. */
-  unresolved?: (NkiUnresolvedSample | ExsUnresolvedSample)[];
+  unresolved?: ExsUnresolvedSample[];
   /** Pasta raiz de biblioteca escolhida manualmente pelo usuário (ver
    *  chooseLibraryFolderForItem) — reaplicada automaticamente em
    *  re-inspeções/conversões deste mesmo item, pra não precisar escolher de
@@ -113,29 +112,29 @@ interface QueueItem {
    *  "Editar mapeamento" na faixa de pré-visualização) — ver
    *  `MappingEditor.tsx`. Quando presente, `convertItem` passa isto como
    *  `overrideInstrument` pra `convertAny`; só tem efeito real em
-   *  `.syx`/`.nki`/`.exs` hoje (ver `formatSupportsMappingEdits` abaixo) —
+   *  `.syx`/`.exs` hoje (ver `formatSupportsMappingEdits` abaixo) —
    *  pros demais formatos fica guardado pra quando o backend Rust ganhar
    *  suporte a receber mapeamento editado de volta.
    */
   editedInstrument?: MrqInstrumentModel;
 }
 
-/** Só `.syx` (DX7), `.nki` (Kontakt) e `.exs` (Logic EXS24) convertem
- *  inteiramente no WebView, montando o `MrqInstrumentModel` localmente
- *  antes de chamar `mrqBuilderBegin` — pra esses, um modelo editado no
- *  Editor de Mapeamento pode ser usado de verdade na conversão (ver
+/** Só `.syx` (DX7) e `.exs` (Logic EXS24) convertem inteiramente no
+ *  WebView, montando o `MrqInstrumentModel` localmente antes de chamar
+ *  `mrqBuilderBegin` — pra esses, um modelo editado no Editor de
+ *  Mapeamento pode ser usado de verdade na conversão (ver
  *  `overrideInstrument` em converterFormats.ts). Os demais formatos
  *  (SF2/SF3, NPNO/NSMP, WAV/AIFF/FLAC/MP3/OGG) convertem via um único
  *  comando Rust opaco que reconstrói tudo do zero a partir do arquivo de
  *  origem, sem gancho pra receber mapeamento de volta — e a captura de
  *  áudio Kontakt já nasce convertida (não há nada pra reconverter aqui). */
 function formatSupportsMappingEdits(item: QueueItem): boolean {
-  return !item.captureKind && (item.format === 'syx' || item.format === 'nki' || item.format === 'exs');
+  return !item.captureKind && (item.format === 'syx' || item.format === 'exs');
 }
 
 function mappingPersistNote(item: QueueItem): string {
   if (formatSupportsMappingEdits(item)) {
-    return 'As edições feitas aqui são usadas de verdade na conversão deste instrumento — .syx/.nki/.exs convertem inteiramente dentro do app, sem depender de um comando opaco do backend.';
+    return 'As edições feitas aqui são usadas de verdade na conversão deste instrumento — .syx/.exs convertem inteiramente dentro do app, sem depender de um comando opaco do backend.';
   }
   return 'Este formato ainda converte por um único comando do backend Rust que reconstrói o mapeamento direto do arquivo original. As edições feitas aqui ficam guardadas nesta sessão (e no botão "Salvar edições"), mas a conversão de hoje usa o mapeamento original — aplicar edições de verdade a este formato é a próxima etapa, ainda não implementada.';
 }
@@ -211,7 +210,7 @@ function InstrumentConverterInner() {
         filters: [
           {
             name: 'Instrumentos suportados',
-            extensions: ['sf2', 'sf3', 'npno', 'nsmp', 'nsmp3', 'nsmp4', 'syx', 'nki', 'exs', 'wav', 'wave', 'aiff', 'aif', 'flac', 'mp3', 'ogg'],
+            extensions: ['sf2', 'sf3', 'npno', 'nsmp', 'nsmp3', 'nsmp4', 'syx', 'exs', 'wav', 'wave', 'aiff', 'aif', 'flac', 'mp3', 'ogg'],
           },
           { name: 'Todos os arquivos', extensions: ['*'] },
         ],
@@ -272,7 +271,7 @@ function InstrumentConverterInner() {
   }
 
   /** Pede ao usuário a pasta-raiz de uma biblioteca de amostras e reinspeciona
-   *  o item com ela (ver NkiLayerVoice.resolveFromLibraryRoot/ExsLayerVoice.resolveFromLibraryRoot/
+   *  o item com ela (ver ExsLayerVoice.resolveFromLibraryRoot/
    *  ConverterFormatOptions.libraryRoot)
    *  — mesmo comportamento de recuperação que o Mixer Pro oferece pra
    *  biblioteca Kontakt "fora do lugar", reimplementado aqui sem usar nenhum
@@ -380,7 +379,7 @@ function InstrumentConverterInner() {
           </div>
           <div className="converter-dropzone" onClick={() => void pickFiles()}>
             <Upload size={18} />
-            <span>SF2/SF3, NPNO/NSMP, SYX, NKI, EXS, WAV/AIFF/FLAC/MP3/OGG — clique para escolher um ou vários arquivos</span>
+            <span>SF2/SF3, NPNO/NSMP, SYX, EXS, WAV/AIFF/FLAC/MP3/OGG — clique para escolher um ou vários arquivos</span>
           </div>
           <button className="btn ghost" onClick={() => setCaptureDialogOpen(true)}>
             <Upload size={14} /> Importar instrumento renderizado pelo Kontakt…
@@ -552,7 +551,7 @@ function QueueRow({
       )}
       {item.status === 'inspect-error' && <div className="converter-queue-row-warning">{item.error}</div>}
       {item.status === 'convert-error' && <div className="converter-queue-row-warning">{item.error}</div>}
-      {(item.format === 'nki' || item.format === 'exs') && (missingCount > 0 || item.status === 'inspect-error') && (
+      {item.format === 'exs' && (missingCount > 0 || item.status === 'inspect-error') && (
         <div className="converter-queue-row-warning">
           <AlertTriangle size={11} />{' '}
           {missingCount > 0 ? `${missingCount} amostra(s) não encontrada(s)` : 'amostras não encontradas ao lado do arquivo'}

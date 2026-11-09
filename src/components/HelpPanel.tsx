@@ -1109,12 +1109,24 @@ export default function HelpPanel() {
           </div>
           <p>
             Diferente de carregar um instrumento direto numa camada do Rack, o Conversor serve pra transformar o
-            arquivo original (<code>.nki</code>, <code>.exs</code>, <code>.sf2</code>/<code>.sf3</code>,{' '}
-            <code>.npno</code>, <code>.nsmp</code>, <code>.syx</code> ou uma amostra solta) num arquivo{' '}
+            arquivo original (<code>.exs</code>, <code>.sf2</code>/<code>.sf3</code>,{' '}
+            <code>.npno</code>, <code>.nsmp</code>, <code>.syx</code>, uma amostra solta ou áudio renderizado pelo
+            Kontakt) num arquivo{' '}
             <code>.mrq</code> — o formato nativo do MRQ, que já guarda o áudio decodificado pronto pra tocar (abre
             bem mais rápido depois, igual o <code>.mrqi</code> do Rack) e pode ser redistribuído sem depender do
             programa original.
           </p>
+          <div className="help-callout warn">
+            <b>Kontakt (qualquer versão, 1 a 9+):</b> o Conversor não lê arquivos <code>.nki</code> diretamente — a
+            Native Instruments protege o formato por direitos autorais/segredo industrial (já processou
+            judicialmente projetos que tentaram documentar isso, inclusive os não criptografados), então nenhuma
+            ferramenta de terceiros faz isso de forma legítima. O caminho suportado é o botão{' '}
+            <b>"Importar instrumento renderizado pelo Kontakt…"</b>: você toca/renderiza as notas desejadas no seu
+            próprio Kontakt licenciado, exporta como <code>.wav</code>/<code>.aiff</code>, e o Conversor monta o
+            instrumento <code>.mrq</code> a partir desse áudio (detecta nota e velocidade pelo nome do arquivo,
+            com ajuste manual na tela). Funciona pra qualquer versão do Kontakt, inclusive bibliotecas comerciais
+            protegidas — porque nunca lê o <code>.nki</code> em si, só o áudio que você mesmo gerou.
+          </div>
           <ol>
             <li>Clique em <b>"Escolher arquivos..."</b> e selecione um ou vários instrumentos.</li>
             <li>
@@ -1125,7 +1137,7 @@ export default function HelpPanel() {
               como scripts/efeitos/motor de modulação) — nunca omitido.
             </li>
             <li>
-              Se faltar alguma amostra (arquivo <code>.nki</code>/<code>.exs</code> que referencia um <code>.wav</code>{' '}
+              Se faltar alguma amostra (arquivo <code>.exs</code> que referencia um <code>.wav</code>{' '}
               que não está do lado), o item mostra quantas não foram encontradas — clique no ícone de pasta pra
               apontar a pasta raiz da biblioteca e tentar resolver.
             </li>
@@ -1143,7 +1155,7 @@ export default function HelpPanel() {
           </ol>
           <div className="help-callout">
             <b>As edições do Editor de Mapeamento entram de verdade no arquivo exportado</b> para instrumentos vindos
-            de <code>.syx</code>, <code>.nki</code> e <code>.exs</code> — o <code>.mrq</code> salvo já sai com a nota
+            de <code>.syx</code> e <code>.exs</code> — o <code>.mrq</code> salvo já sai com a nota
             raiz/afinação/faixas/volume/pan que você ajustou na tela, não é só uma visualização. Para os demais
             formatos (SF2/SF3, NPNO/NSMP, amostra solta, captura de áudio do Kontakt), a edição ainda funciona na
             tela e pode ser revisada antes de converter, mas por enquanto fica só durante aquela sessão — uma versão
@@ -1159,7 +1171,7 @@ export default function HelpPanel() {
           <Figure
             src="help-converter-exs.png"
             alt="Conversor de Instrumentos com um instrumento Logic EXS24 (.exs) importado, mostrando presets, grupos, zonas e faixa de notas"
-            caption="Novidade — .exs (Logic EXS24) no Conversor: o mesmo inspetor já usado para .nki/.sf2/.syx, agora também lendo EXS24."
+            caption="Novidade — .exs (Logic EXS24) no Conversor: o mesmo inspetor já usado para .sf2/.syx, agora também lendo EXS24."
           />
           <Figure
             src="help-converter-exs-compat.png"

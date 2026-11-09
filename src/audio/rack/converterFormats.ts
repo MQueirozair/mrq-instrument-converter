@@ -3,15 +3,19 @@
  * Instrument Converter (Fase 8, ver docs/mrq-instrument-converter/mrq-converter-architecture.md §7).
  * Cada formato já tem seu próprio par inspect/convert, espalhado em
  * `mrqFormat.ts` (SF2/SF3/NPNO/NSMP/WAV/AIFF/FLAC/MP3/OGG — Fases 2-4 e 7,
- * tudo backend Rust), `syxImport.ts` (Fase 5) e `nkiImport.ts` (Fase 6);
- * este módulo só os unifica atrás de uma API comum (`detectFormat`/
+ * tudo backend Rust), `syxImport.ts` (Fase 5) e `exsImport.ts` (Logic
+ * EXS24); este módulo só os unifica atrás de uma API comum (`detectFormat`/
  * `inspectAny`/`convertAny`) pra a tela do conversor não precisar conhecer
  * as particularidades de cada um.
+ *
+ * Leitura direta de `.nki` (Kontakt) foi removida de propósito — ver o
+ * comentário de `EXTENSION_MAP` abaixo pro motivo e pra qual caminho este
+ * app oferece no lugar.
  *
  * Nenhuma lógica de conversão nova mora aqui — é só roteamento + a leitura
  * de bytes crua que o formato SYX precisa antes de inspecionar (os outros
  * formatos recebem um caminho de arquivo e leem/decodificam por conta
- * própria, no backend Rust ou, no caso do NKI, dentro de `nkiImport.ts`).
+ * própria, no backend Rust).
  */
 
 import {
@@ -25,10 +29,9 @@ import {
   type MrqFinishResult,
   type MrqInstrumentModel,
 } from './mrqFormat';
-import { convertNkiToMrq, inspectNki, type NkiUnresolvedSample } from './nkiImport';
 import { convertExsToMrq, inspectExs, type ExsUnresolvedSample } from './exsImport';
 import { convertSyxToMrq, inspectSyx } from './syxImport';
-export type { NkiUnresolvedSample, ExsUnresolvedSample };
+export type { ExsUnresolvedSample };
 
 export type ConverterFormatId =
   | 'sf2'
@@ -36,7 +39,6 @@ export type ConverterFormatId =
   | 'npno'
   | 'nsmp'
   | 'syx'
-  | 'nki'
   | 'exs'
   | 'wav'
   | 'aiff'
@@ -50,7 +52,6 @@ export const FORMAT_LABELS: Record<ConverterFormatId, string> = {
   npno: 'Biblioteca de piano Nord (NPNO)',
   nsmp: 'Amostra Nord (NSMP)',
   syx: 'Banco SysEx DX7 (SYX)',
-  nki: 'Patch Kontakt (NKI)',
   exs: 'Instrumento Logic EXS24 (EXS)',
   wav: 'WAV',
   aiff: 'AIFF',
@@ -59,11 +60,23 @@ export const FORMAT_LABELS: Record<ConverterFormatId, string> = {
   ogg: 'OGG Vorbis',
 };
 
-/** Extensões conhecidas que NÃO são um `.nki` avulso válido (ver §6 do
- *  documento de arquitetura) — roteadas pro importador NKI mesmo assim,
- *  de propósito: é ele quem sabe explicar o motivo exato (DRM/escopo) via
- *  `checkKnownUnsupportedExtension`, em vez de um "formato desconhecido"
- *  genérico vindo daqui. */
+/** Leitura direta de `.nki`/`.nkx`/`.nkc`/`.nkb`/`.nkm` (Kontakt) foi
+ *  removida de propósito deste conversor — ver §6 do documento de
+ *  arquitetura. Não é só uma questão de esforço de engenharia: até o
+ *  parsing do formato legado Kontakt 1-4 (não criptografado) depende de
+ *  reimplementar uma estrutura de arquivo proprietária da Native
+ *  Instruments nunca publicada por eles, e a própria NI já moveu
+ *  judicialmente (notificação DMCA de 2024 contra o projeto open source
+ *  `ni-file`, que fazia engenharia reversa desse formato) pra deixar claro
+ *  que considera isso violação de direitos autorais/segredo industrial,
+ *  independente de o conteúdo estar ou não protegido por DRM. Para
+ *  qualquer versão do Kontakt (1 a 9+, inclusive bibliotecas comerciais
+ *  protegidas), o caminho suportado por este app é a tela "Importar
+ *  instrumento renderizado pelo Kontakt…" (ver KontaktCaptureDialog.tsx/
+ *  kontaktCapture.ts): o usuário renderiza as notas em WAV/AIFF dentro do
+ *  próprio Kontakt (que ele já tem licenciado) e o conversor monta o
+ *  instrumento a partir desse áudio — nenhum arquivo `.nki` é lido ou
+ *  teve seu formato reimplementado nesse fluxo. */
 const EXTENSION_MAP: Record<string, ConverterFormatId> = {
   sf2: 'sf2',
   sf3: 'sf3',
@@ -72,11 +85,6 @@ const EXTENSION_MAP: Record<string, ConverterFormatId> = {
   nsmp3: 'nsmp',
   nsmp4: 'nsmp',
   syx: 'syx',
-  nki: 'nki',
-  nkx: 'nki',
-  nkc: 'nki',
-  nkb: 'nki',
-  nkm: 'nki',
   exs: 'exs',
   wav: 'wav',
   wave: 'wav',
@@ -120,7 +128,7 @@ export function detectFormatByExtension(path: string): ConverterFormatId | null 
  *  dependem de receber o arquivo completo num fetch() sem Range). Sem o
  *  Range aqui, esta função — que só queria espiar 32 bytes — forçava o
  *  Rust a carregar o arquivo inteiro na memória e mandar tudo pro
- *  WebView2 antes do primeiro byte chegar no renderer. Pra um `.nki`/
+ *  WebView2 antes do primeiro byte chegar no renderer. Pra um `.exs`/
  *  `.npno` pequeno isso passava despercebido; pra uma biblioteca SF2
  *  comercial de vários GB, isso trava o import inteiro (e como isso
  *  acontece ANTES do item entrar na fila do React, nada aparece na tela
@@ -179,7 +187,7 @@ function matchesSignature(bytes: Uint8Array, offset: number, sig: string): boole
  * legível pra UI avisar quando a extensão parece não bater com o conteúdo
  * real do arquivo (ex.: alguém renomeou um .mp3 pra .wav). `null` quando a
  * assinatura não é uma das reconhecidas aqui (não é necessariamente um
- * erro — vários formatos deste conversor, como SF2/SF3/NPNO/NSMP/NKI/SYX,
+ * erro — vários formatos deste conversor, como SF2/SF3/NPNO/NSMP/SYX,
  * têm cabeçalhos próprios não cobertos por este checklist simples, e já
  * são validados de verdade dentro de cada importador).
  */
@@ -219,22 +227,23 @@ export function magicBytesConflictWarning(format: ConverterFormatId, sniff: stri
 export interface ConverterInspection {
   instrument: MrqInstrumentModel;
   compatibility: MrqCompatibilityReport;
-  /** Só preenchido pra `.nki`/`.exs` (ver NkiInspectionResult.unresolved/
-   *  ExsInspectionResult.unresolved) — permite à UI do conversor checar
+  /** Só preenchido pra `.exs` (ver ExsInspectionResult.unresolved) —
+   *  permite à UI do conversor checar
    *  `reason === 'not-found'` estruturalmente e oferecer "escolher pasta da
    *  biblioteca" sem parsear o texto do relatório de compatibilidade. */
-  unresolved?: (NkiUnresolvedSample | ExsUnresolvedSample)[];
+  unresolved?: ExsUnresolvedSample[];
 }
 
 export interface ConverterConversion {
   finish: MrqFinishResult;
   compatibility: MrqCompatibilityReport;
   /** Ver ConverterInspection.unresolved. */
-  unresolved?: (NkiUnresolvedSample | ExsUnresolvedSample)[];
+  unresolved?: ExsUnresolvedSample[];
 }
 
 /** Opções extras, específicas de cada formato, pro `inspectAny`/`convertAny`
- *  abaixo — `.nki` e `.exs` usam `libraryRoot` (mesmo conceito nos dois:
+ *  abaixo — `.exs` usa `libraryRoot`
+   *  (conceito:
  *  pasta-raiz de biblioteca escolhida manualmente pelo usuário quando as
  *  amostras não estão perto do arquivo original), mas isto fica num objeto
  *  genérico (em vez de mais um parâmetro posicional) pra não precisar
@@ -242,7 +251,7 @@ export interface ConverterConversion {
  *  parecido no futuro. */
 export interface ConverterFormatOptions {
   /** Pasta-raiz de uma biblioteca de amostras escolhida manualmente pelo
-   *  usuário (ver `fs.chooseFolder`) — usada quando `format === 'nki'` ou
+   *  usuário (ver `fs.chooseFolder`) — usada quando
    *  `format === 'exs'` pra tentar resolver, por nome de arquivo, amostras
    *  que não estavam perto do arquivo original nem numa subpasta
    *  Samples/samples direta. */
@@ -251,7 +260,7 @@ export interface ConverterFormatOptions {
    *  NO LUGAR do mapeamento recém-extraído do arquivo de origem — só tem
    *  efeito real em formatos cuja conversão roda inteiramente no WebView e
    *  monta o `MrqInstrumentModel` localmente antes de chamar
-   *  `mrqBuilderBegin` (`.syx` DX7, `.nki` Kontakt, `.exs` Logic EXS24).
+   *  `mrqBuilderBegin` (`.syx` DX7, `.exs` Logic EXS24).
    *  Formatos que convertem via um único comando Rust opaco
    *  (`mrq_convert_*_to_mrq`, sem gancho pra receber um modelo de volta)
    *  ainda ignoram este campo — ver `formatSupportsMappingEdits` em
@@ -286,8 +295,6 @@ export async function inspectAny(
       const bytes = await readFileBytes(sourcePath);
       return inspectSyx(bytes, {}, basenameOf(sourcePath).replace(/\.syx$/i, ''));
     }
-    case 'nki':
-      return inspectNki(sourcePath, undefined, opts?.libraryRoot);
     case 'exs':
       return inspectExs(sourcePath, undefined, opts?.libraryRoot);
     default: {
@@ -327,8 +334,6 @@ export async function convertAny(
       return mrqConvertAudioFileToMrq(sourcePath, destPath);
     case 'syx':
       return convertSyxToMrq(sourcePath, destPath, { onProgress }, basenameOf(sourcePath).replace(/\.syx$/i, ''), opts?.overrideInstrument);
-    case 'nki':
-      return convertNkiToMrq(sourcePath, destPath, undefined, opts?.libraryRoot, opts?.overrideInstrument);
     case 'exs':
       return convertExsToMrq(sourcePath, destPath, undefined, opts?.libraryRoot, opts?.overrideInstrument);
     default: {

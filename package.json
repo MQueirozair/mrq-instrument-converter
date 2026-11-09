@@ -22,7 +22,6 @@
     "lint": "tsc -b --noEmit",
     "test:parts": "node scripts/test-part-recognition.mjs && node scripts/test-speech-part-recognition.mjs",
     "test:syx": "node scripts/test-syx-import.mjs",
-    "test:nki": "node scripts/test-nki-import.mjs",
     "test:exs": "node scripts/test-exs-import.mjs",
     "test:mrq-rack": "node scripts/test-mrq-rack-layer.mjs",
     "test:sf2-sanitize": "node scripts/test-sf2-info-sanitize.mjs",
