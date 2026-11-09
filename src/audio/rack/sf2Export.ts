@@ -5,7 +5,16 @@
  * (`autoSampler.ts`/`AutoSamplerDialog.tsx`) pra oferecer `.sf2` como
  * formato de saída além do `.mrq` nativo — a partir das MESMAS amostras já
  * capturadas (PCM Float32, já processado por `autoSamplerEngine.ts`:
- * ganho/corte de silêncio/loop aplicados).
+ * ganho/corte de silêncio/loop aplicados) — e também pelo MRQ Instrument
+ * Converter (`InstrumentConverter.tsx`/`mrqToSf2Export.ts`) pra exportar
+ * QUALQUER instrumento já convertido pra `.mrq` de volta pra `.sf2`,
+ * inclusive quando o modelo tem MÚLTIPLOS presets (ex.: um banco `.sf2`
+ * importado com vários instrumentos, ou um banco `.syx` DX7 com até 32
+ * patches — `syxImport.ts` cria um `MrqPreset` por voice) — por isso o
+ * formato interno deste módulo sempre foi multi-preset
+ * (`buildMultiPresetSf2Binary`); `buildSf2Binary` é só o caso de
+ * conveniência de 1 preset só, mantido por compatibilidade com o Auto
+ * Sampler e com `scripts/test-sf2-export.mjs`.
  *
  * Implementado 100% em TypeScript (sem depender do backend Rust pra isso):
  * o formato SF2 é um RIFF binário bem documentado e público (ao contrário
@@ -23,8 +32,20 @@
  * `wSampleLink`/`sfSampleType`, convenção padrão do formato pra estéreo —
  * ver §7.9/§8.1.2 do spec). NÃO comprime amostra nenhuma (isso é o SF3,
  * formato não-oficial que usa Ogg Vorbis — ver fluidsynth.org/wiki/
- * SoundFont3Format — ainda não implementado aqui; todo .sf2 gerado por
- * este módulo é PCM 16-bit sem compressão, universalmente compatível).
+ * SoundFont3Format — ainda não implementado aqui; todo arquivo gerado por
+ * este módulo, mesmo salvo com extensão `.sf3`, é PCM 16-bit sem
+ * compressão, universalmente compatível mas do mesmo tamanho de um `.sf2`
+ * — ver `mrqToSf2Export.ts` pro aviso que isso gera na UI do conversor).
+ *
+ * LIMITAÇÃO CONHECIDA (igual já era antes desta extensão multi-preset):
+ * só os generators de tecla/velocity/root-key/loop/pan são escritos — nada
+ * de `MrqZone.tuneCents`/`volumeDb`/`envelope`/`filter` é carregado pro
+ * SF2 (o formato suporta isso via mais generators, mas não está
+ * implementado aqui ainda). Round-trips (ex.: importar um `.sf2` com
+ * envelope customizado, converter pra `.mrq`, exportar de volta pra
+ * `.sf2`) perdem esses ajustes finos — o resultado toca as notas certas,
+ * nas teclas certas, com os loops certos, mas sem o envelope/tune/ganho
+ * originais.
  */
 
 // ---------------------------------------------------------------------------
@@ -174,6 +195,20 @@ export interface BuildSf2Options {
   program?: number; // default 0
 }
 
+/** Um preset completo dentro do SF2 — ver `buildMultiPresetSf2Binary`. Cada
+ *  preset vira seu próprio par PHDR+INST no arquivo final (nunca
+ *  mesclado/achatado com os de outros presets), preservando a separação
+ *  que o `MrqInstrumentModel` de origem já tinha (`presets[]`). */
+export interface Sf2ExportPreset {
+  /** Nome do preset/instrumento (até 20 chars ASCII — truncado se maior). */
+  name: string;
+  /** Banco MIDI (0-127). Default: 0. */
+  bank?: number;
+  /** Programa MIDI (0-127). Default: índice do preset na lista (clampado em 127) — assim cada preset de um banco multi-preset (ex.: 32 patches de um .syx DX7) fica num número de programa diferente e selecionável. */
+  program?: number;
+  zones: Sf2ExportZone[];
+}
+
 function floatTo16(sample: number): number {
   const clamped = Math.max(-1, Math.min(1, sample));
   return Math.round(clamped * 32767);
@@ -187,7 +222,7 @@ function extractChannelInt16(interleaved: Float32Array, channels: number, channe
   return out;
 }
 
-/** Cada "sample físico" (um canal mono de uma zona) que vai virar um registro SHDR + um ponto de dado no pool `smpl`. */
+/** Cada "sample físico" (um canal mono de uma zona) que vai virar um registro SHDR + um ponto de dado no pool `smpl`. Compartilhado GLOBALMENTE entre todos os presets do arquivo (índices únicos no arquivo inteiro, não por preset). */
 interface PhysicalSample {
   name: string;
   pcm: Int16Array;
@@ -207,69 +242,86 @@ interface InstrumentZoneSpec {
   loVel: number;
   hiVel: number;
   rootNote: number;
-  sampleIndex: number; // índice em physicalSamples
+  sampleIndex: number; // índice GLOBAL em physicalSamples
   /** Só usado em pares estéreo (ver GEN_PAN) — -500 (esquerda) / +500 (direita); ausente = usa o default do sintetizador (centro). */
   panTenthPercent?: number;
 }
 
+/** Um instrumento SF2 (INST) — 1:1 com cada `Sf2ExportPreset` de entrada (mesma convenção já usada antes desta extensão: "preset com uma zona global apontando pro instrumento que carrega a distribuição real de tecla/velocity/sample"). */
+interface InstrumentSpec {
+  name: string;
+  zones: InstrumentZoneSpec[];
+}
+
 const MIN_PAD_SAMPLES = 46; // ver §6.1 — mínimo de zero-samples exigido depois de cada amostra.
 
-export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options): Uint8Array {
-  if (zones.length === 0) throw new Error('nenhuma zona pra gerar o SF2 — capture pelo menos uma amostra antes.');
+/** Monta um `.sf2` binário com UM OU MAIS presets — cada um com seu próprio
+ *  instrumento/conjunto de zonas, todos compartilhando o mesmo pool global
+ *  de amostras físicas (`sdta`/`shdr`). É a função "de verdade"; `buildSf2Binary`
+ *  abaixo é só a variante de conveniência pra 1 preset só. */
+export function buildMultiPresetSf2Binary(presets: Sf2ExportPreset[], soundFontName = 'MRQ Instrument Converter'): Uint8Array {
+  const nonEmpty = presets.filter((p) => p.zones.length > 0);
+  if (nonEmpty.length === 0) throw new Error('nenhuma zona pra gerar o SF2 — converta ou capture pelo menos uma amostra antes.');
 
-  // 1) Monta a lista de "samples físicos" (1 por zona mono, 2 por zona estéreo) + as zonas de instrumento que os referenciam.
+  // 1) Monta o pool GLOBAL de "samples físicos" (1 por zona mono, 2 por zona estéreo, de TODOS os presets juntos)
+  //    +, por preset, a lista de zonas de instrumento que os referenciam (índices globais).
   const physicalSamples: PhysicalSample[] = [];
-  const instrumentZones: InstrumentZoneSpec[] = [];
+  const instruments: InstrumentSpec[] = [];
 
-  zones.forEach((zone, zoneIdx) => {
-    if (zone.channels === 1) {
-      const idx = physicalSamples.length;
-      physicalSamples.push({
-        name: `${zone.label || 'smp'}_${zoneIdx}`,
-        pcm: extractChannelInt16(zone.interleaved, 1, 0),
-        sampleRateHz: zone.sampleRateHz,
-        rootNote: zone.rootNote,
-        loopStartFrame: zone.loopStartFrame,
-        loopEndFrame: zone.loopEndFrame,
-        sampleType: SAMPLE_TYPE_MONO,
-      });
-      instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: idx });
-    } else {
-      const leftIdx = physicalSamples.length;
-      const rightIdx = leftIdx + 1;
-      physicalSamples.push({
-        name: `${zone.label || 'smp'}_${zoneIdx}L`,
-        pcm: extractChannelInt16(zone.interleaved, 2, 0),
-        sampleRateHz: zone.sampleRateHz,
-        rootNote: zone.rootNote,
-        loopStartFrame: zone.loopStartFrame,
-        loopEndFrame: zone.loopEndFrame,
-        sampleType: SAMPLE_TYPE_LEFT,
-        linkedIndex: rightIdx,
-      });
-      physicalSamples.push({
-        name: `${zone.label || 'smp'}_${zoneIdx}R`,
-        pcm: extractChannelInt16(zone.interleaved, 2, 1),
-        sampleRateHz: zone.sampleRateHz,
-        rootNote: zone.rootNote,
-        loopStartFrame: zone.loopStartFrame,
-        loopEndFrame: zone.loopEndFrame,
-        sampleType: SAMPLE_TYPE_RIGHT,
-        linkedIndex: leftIdx,
-      });
-      // Duas zonas de instrumento (uma por canal) com a MESMA faixa de tecla/velocity. O par wSampleLink/sfSampleType
-      // identifica QUAL amostra é a outra metade do par estéreo (exigido pelo spec, §7.9/§7.10), mas na prática
-      // testada aqui (fluidsynth 2.4) isso sozinho não direciona o áudio pro canal certo — é preciso também o
-      // generator de Pan explícito (-500 = 100% esquerda, +500 = 100% direita, ver §8.1.3) em cada zona, senão as
-      // duas tocam centralizadas e se somam nos dois canais (confirmado por scripts/test-sf2-export.mjs, que
-      // renderiza de verdade e checa que L/R saem diferentes).
-      instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: leftIdx, panTenthPercent: -500 });
-      instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: rightIdx, panTenthPercent: 500 });
-    }
+  nonEmpty.forEach((preset, presetIdx) => {
+    const instrumentZones: InstrumentZoneSpec[] = [];
+    preset.zones.forEach((zone, zoneIdx) => {
+      const label = zone.label || `smp${presetIdx}_${zoneIdx}`;
+      if (zone.channels === 1) {
+        const idx = physicalSamples.length;
+        physicalSamples.push({
+          name: `${label}_${zoneIdx}`,
+          pcm: extractChannelInt16(zone.interleaved, 1, 0),
+          sampleRateHz: zone.sampleRateHz,
+          rootNote: zone.rootNote,
+          loopStartFrame: zone.loopStartFrame,
+          loopEndFrame: zone.loopEndFrame,
+          sampleType: SAMPLE_TYPE_MONO,
+        });
+        instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: idx });
+      } else {
+        const leftIdx = physicalSamples.length;
+        const rightIdx = leftIdx + 1;
+        physicalSamples.push({
+          name: `${label}_${zoneIdx}L`,
+          pcm: extractChannelInt16(zone.interleaved, 2, 0),
+          sampleRateHz: zone.sampleRateHz,
+          rootNote: zone.rootNote,
+          loopStartFrame: zone.loopStartFrame,
+          loopEndFrame: zone.loopEndFrame,
+          sampleType: SAMPLE_TYPE_LEFT,
+          linkedIndex: rightIdx,
+        });
+        physicalSamples.push({
+          name: `${label}_${zoneIdx}R`,
+          pcm: extractChannelInt16(zone.interleaved, 2, 1),
+          sampleRateHz: zone.sampleRateHz,
+          rootNote: zone.rootNote,
+          loopStartFrame: zone.loopStartFrame,
+          loopEndFrame: zone.loopEndFrame,
+          sampleType: SAMPLE_TYPE_RIGHT,
+          linkedIndex: leftIdx,
+        });
+        // Duas zonas de instrumento (uma por canal) com a MESMA faixa de tecla/velocity. O par wSampleLink/sfSampleType
+        // identifica QUAL amostra é a outra metade do par estéreo (exigido pelo spec, §7.9/§7.10), mas na prática
+        // testada aqui (fluidsynth 2.4) isso sozinho não direciona o áudio pro canal certo — é preciso também o
+        // generator de Pan explícito (-500 = 100% esquerda, +500 = 100% direita, ver §8.1.3) em cada zona, senão as
+        // duas tocam centralizadas e se somam nos dois canais (confirmado por scripts/test-sf2-export.mjs, que
+        // renderiza de verdade e checa que L/R saem diferentes).
+        instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: leftIdx, panTenthPercent: -500 });
+        instrumentZones.push({ loKey: zone.loKey, hiKey: zone.hiKey, loVel: zone.loVel, hiVel: zone.hiVel, rootNote: zone.rootNote, sampleIndex: rightIdx, panTenthPercent: 500 });
+      }
+    });
+    instruments.push({ name: preset.name || `Preset ${presetIdx + 1}`, zones: instrumentZones });
   });
 
-  // 2) sdta: concatena o PCM de todos os samples físicos, com padding de zeros entre cada um (e no final) — guarda o
-  //    offset (em SAMPLE POINTS, não bytes) de início/fim de cada um pra preencher o SHDR depois.
+  // 2) sdta: concatena o PCM de TODOS os samples físicos (de todos os presets), com padding de zeros entre cada um
+  //    (e no final) — guarda o offset (em SAMPLE POINTS, não bytes) de início/fim de cada um pra preencher o SHDR depois.
   const smplWriter = new ByteWriter();
   const sampleOffsets: { start: number; end: number }[] = [];
   for (const sample of physicalSamples) {
@@ -280,7 +332,7 @@ export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options)
     sampleOffsets.push({ start, end });
   }
 
-  // 3) shdr — um registro por sample físico + 1 terminal ("EOS").
+  // 3) shdr — um registro por sample físico (de TODOS os presets) + 1 terminal ("EOS").
   const shdrWriter = new ByteWriter();
   physicalSamples.forEach((sample, i) => {
     const { start, end } = sampleOffsets[i];
@@ -304,7 +356,9 @@ export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options)
   shdrWriter.u16(0);
   shdrWriter.u16(0);
 
-  // 4) inst/ibag/imod/igen — UM instrumento contendo todas as zonas.
+  // 4) inst/ibag/imod/igen — UM instrumento por preset de entrada, cada um com suas próprias zonas (todas concatenadas
+  //    num único ibag/igen globais, como o spec exige — ver §7.2: "all the instrument zones... are stored
+  //    contiguously").
   const igenWriter = new ByteWriter();
   const ibagWriter = new ByteWriter();
   let igenCount = 0;
@@ -321,67 +375,81 @@ export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options)
     igenCount += 1;
   }
 
-  instrumentZones.forEach((z) => {
-    ibagWriter.u16(igenCount); // wInstGenNdx — início dos generators desta zona
-    ibagWriter.u16(0); // wInstModNdx — sem modulators
-    // Ordem exigida pelo spec (§7.5/§7.9): keyRange primeiro, depois velRange, só então os demais — sampleID por último.
-    if (z.loKey !== 0 || z.hiKey !== 127) pushGenRange(GEN_KEY_RANGE, z.loKey, z.hiKey);
-    if (z.loVel !== 0 || z.hiVel !== 127) pushGenRange(GEN_VEL_RANGE, z.loVel, z.hiVel);
-    const sample = physicalSamples[z.sampleIndex];
-    if (z.panTenthPercent !== undefined) pushGenU16(GEN_PAN, z.panTenthPercent);
-    pushGenU16(GEN_OVERRIDING_ROOT_KEY, Math.max(0, Math.min(127, Math.round(z.rootNote))));
-    if (sample.loopStartFrame !== undefined && sample.loopEndFrame !== undefined) {
-      pushGenU16(GEN_SAMPLE_MODES, SAMPLE_MODE_LOOP_CONTINUOUSLY);
-    } else {
-      pushGenU16(GEN_SAMPLE_MODES, SAMPLE_MODE_NO_LOOP);
-    }
-    pushGenU16(GEN_SAMPLE_ID, z.sampleIndex); // sempre o ÚLTIMO generator da zona — exigido pelo spec.
+  const instBagStart: number[] = []; // wInstBagNdx de cada instrumento, na ordem
+
+  instruments.forEach((inst) => {
+    instBagStart.push(ibagWriter.byteLength / 4); // cada registro ibag tem 4 bytes (2x u16)
+    inst.zones.forEach((z) => {
+      ibagWriter.u16(igenCount); // wInstGenNdx — início dos generators desta zona
+      ibagWriter.u16(0); // wInstModNdx — sem modulators
+      // Ordem exigida pelo spec (§7.5/§7.9): keyRange primeiro, depois velRange, só então os demais — sampleID por último.
+      if (z.loKey !== 0 || z.hiKey !== 127) pushGenRange(GEN_KEY_RANGE, z.loKey, z.hiKey);
+      if (z.loVel !== 0 || z.hiVel !== 127) pushGenRange(GEN_VEL_RANGE, z.loVel, z.hiVel);
+      const sample = physicalSamples[z.sampleIndex];
+      if (z.panTenthPercent !== undefined) pushGenU16(GEN_PAN, z.panTenthPercent);
+      pushGenU16(GEN_OVERRIDING_ROOT_KEY, Math.max(0, Math.min(127, Math.round(z.rootNote))));
+      if (sample.loopStartFrame !== undefined && sample.loopEndFrame !== undefined) {
+        pushGenU16(GEN_SAMPLE_MODES, SAMPLE_MODE_LOOP_CONTINUOUSLY);
+      } else {
+        pushGenU16(GEN_SAMPLE_MODES, SAMPLE_MODE_NO_LOOP);
+      }
+      pushGenU16(GEN_SAMPLE_ID, z.sampleIndex); // sempre o ÚLTIMO generator da zona — exigido pelo spec.
+    });
   });
-  // terminal ibag
+  const totalInstZones = ibagWriter.byteLength / 4;
+  // terminal ibag (comum a todos os instrumentos — marca o fim do último)
   ibagWriter.u16(igenCount);
   ibagWriter.u16(0);
 
   const instWriter = new ByteWriter();
-  instWriter.fixedStr(options.instrumentName || 'Auto Sampler', 20);
-  instWriter.u16(0); // única instância = zona 0 em diante
-  // terminal "EOI" — o valor aqui é a CONTAGEM DE ZONAS REAIS (não +1): o
-  // tamanho do IBAG em bytes é "4 * wInstBagNdx do terminal + 4" (ver §7.7
-  // do spec, mesma fórmula/raciocínio do wPresetBagNdx terminal do PHDR
-  // logo abaixo) — não é "quantos registros existem no total".
+  instruments.forEach((inst, i) => {
+    instWriter.fixedStr(inst.name, 20);
+    instWriter.u16(instBagStart[i]);
+  });
+  // terminal "EOI" — o valor aqui é a CONTAGEM TOTAL DE ZONAS REAIS de todos os instrumentos (não +1): o
+  // tamanho do IBAG em bytes é "4 * wInstBagNdx do terminal + 4" (ver §7.7 do spec, mesma fórmula/raciocínio do
+  // wPresetBagNdx terminal do PHDR logo abaixo) — não é "quantos registros existem no total".
   instWriter.fixedStr('EOI', 20);
-  instWriter.u16(instrumentZones.length);
+  instWriter.u16(totalInstZones);
 
   // imod: sem modulators — só o registro terminal, todo zero (ver §7.4/§7.8).
   const imodWriter = new ByteWriter();
   for (let i = 0; i < 5; i += 1) imodWriter.u16(0);
 
-  // 5) phdr/pbag/pmod/pgen — UM preset com UMA zona global apontando pro instrumento (sem restrição de tecla/velocity: toda a distribuição já está nas zonas do instrumento).
+  // 5) phdr/pbag/pmod/pgen — UM preset de SAÍDA por preset de entrada, cada um com UMA zona global apontando pro seu
+  //    instrumento correspondente (sem restrição de tecla/velocity no nível do preset — toda a distribuição já está
+  //    nas zonas do instrumento, igual já era antes desta extensão).
   const pgenWriter = new ByteWriter();
-  pgenWriter.u16(GEN_INSTRUMENT);
-  pgenWriter.u16(0); // instrumento #0 (o único que existe)
-
   const pbagWriter = new ByteWriter();
-  pbagWriter.u16(0); // wGenNdx
-  pbagWriter.u16(0); // wModNdx
-  pbagWriter.u16(1); // terminal — 1 generator usado (o "instrument")
+  nonEmpty.forEach((preset, i) => {
+    pbagWriter.u16(pgenWriter.byteLength / 4); // wGenNdx — cada registro pgen tem 4 bytes (2x u16)
+    pbagWriter.u16(0); // wModNdx
+    pgenWriter.u16(GEN_INSTRUMENT);
+    pgenWriter.u16(i); // aponta pro instrumento #i (1:1 com os presets de entrada, nesta mesma ordem)
+  });
+  const totalPresetZones = pbagWriter.byteLength / 4;
+  // terminal pbag
+  pbagWriter.u16(pgenWriter.byteLength / 4);
   pbagWriter.u16(0);
 
   const pmodWriter = new ByteWriter();
   for (let i = 0; i < 5; i += 1) pmodWriter.u16(0);
 
   const phdrWriter = new ByteWriter();
-  phdrWriter.fixedStr(options.instrumentName || 'Auto Sampler', 20);
-  phdrWriter.u16(options.program ?? 0);
-  phdrWriter.u16(options.bank ?? 0);
-  phdrWriter.u16(0); // wPresetBagNdx
-  phdrWriter.u32(0);
-  phdrWriter.u32(0);
-  phdrWriter.u32(0);
+  nonEmpty.forEach((preset, i) => {
+    phdrWriter.fixedStr(preset.name || `Preset ${i + 1}`, 20);
+    phdrWriter.u16(preset.program ?? Math.min(127, i));
+    phdrWriter.u16(preset.bank ?? 0);
+    phdrWriter.u16(i); // wPresetBagNdx — 1 zona de preset por preset, na mesma ordem
+    phdrWriter.u32(0);
+    phdrWriter.u32(0);
+    phdrWriter.u32(0);
+  });
   // terminal "EOP"
   phdrWriter.fixedStr('EOP', 20);
   phdrWriter.u16(0);
   phdrWriter.u16(0);
-  phdrWriter.u16(1); // contagem de zonas REAIS do único preset (sempre 1 zona — ver pbagWriter acima), não "total de registros incluindo terminal".
+  phdrWriter.u16(totalPresetZones); // contagem de zonas REAIS de todos os presets (sempre 1 por preset), não "total de registros incluindo terminal".
   phdrWriter.u32(0);
   phdrWriter.u32(0);
   phdrWriter.u32(0);
@@ -408,8 +476,8 @@ export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options)
   const infoList = riffList('INFO', [
     ifilChunk,
     zstrChunk('isng', 'EMU8000'),
-    zstrChunk('INAM', options.instrumentName || 'Auto Sampler'),
-    zstrChunk('ISFT', 'MRQ Instrument Converter — Auto Sampler'),
+    zstrChunk('INAM', soundFontName || 'MRQ Instrument Converter'),
+    zstrChunk('ISFT', 'MRQ Instrument Converter'),
     zstrChunk('ICRD', icrd),
   ]);
 
@@ -437,4 +505,16 @@ export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options)
   riffData.set(pdtaList, off);
 
   return riffChunk('RIFF', riffData);
+}
+
+/** Variante de conveniência pra UM preset só (uso original: Auto Sampler, que
+ *  sempre captura um único instrumento por sessão) — delega inteiramente pra
+ *  `buildMultiPresetSf2Binary` com uma lista de 1 elemento, preservando a
+ *  assinatura e o comportamento de antes desta extensão. */
+export function buildSf2Binary(zones: Sf2ExportZone[], options: BuildSf2Options): Uint8Array {
+  if (zones.length === 0) throw new Error('nenhuma zona pra gerar o SF2 — capture pelo menos uma amostra antes.');
+  return buildMultiPresetSf2Binary(
+    [{ name: options.instrumentName || 'Auto Sampler', bank: options.bank, program: options.program, zones }],
+    options.instrumentName || 'Auto Sampler'
+  );
 }
