@@ -49,7 +49,14 @@ ver limitação de round robin abaixo).
 1. Abra "Auto Sampler" na tela do Conversor de Instrumentos.
 2. Escolha a porta MIDI de saída e o dispositivo de entrada de áudio nos
    campos correspondentes (populados automaticamente a partir dos drivers
-   instalados no passo anterior).
+   instalados no passo anterior). A opção **"Padrão do sistema"** (sempre
+   disponível no topo da lista, igual ao seletor de saída de áudio em
+   Configurações) não trava num id de dispositivo específico — usa sempre o
+   que estiver configurado como entrada padrão do sistema operacional no
+   momento da gravação. É a opção mais robusta se o driver de loopback
+   (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) estiver
+   configurado como entrada padrão do SO; escolha um dispositivo nomeado
+   específico só se precisar gravar de uma entrada que NÃO seja a padrão.
 3. Configure faixa de notas, intervalo de amostragem, sustain/release,
    camadas de velocity, round robin, auto loop e ganho de entrada — os
    mesmos campos do Auto Sampler do Logic Pro.

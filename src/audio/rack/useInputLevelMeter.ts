@@ -14,6 +14,7 @@
  * dispositivo de entrada).
  */
 import { useEffect, useRef, useState } from 'react';
+import { SYSTEM_DEFAULT_AUDIO_INPUT_ID } from './autoSampler';
 
 export interface StereoLevelDb {
   l: number;
@@ -62,7 +63,10 @@ export function useInputLevelMeter(deviceId: string, enabled: boolean, gainDb: n
 
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video: false });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: deviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? true : { deviceId: { exact: deviceId } },
+          video: false,
+        });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
           return;

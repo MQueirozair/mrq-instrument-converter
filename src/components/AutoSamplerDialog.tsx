@@ -49,6 +49,7 @@ import {
   listMidiOutputs,
   previewMidiNote,
   requestAudioInputPermission,
+  SYSTEM_DEFAULT_AUDIO_INPUT_ID,
   type AudioInputDeviceInfo,
   type AutoSamplerProgress,
   type MidiPortInfo,
@@ -142,7 +143,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   const [midiOutputId, setMidiOutputId] = useState<string>('');
   const [midiChannel, setMidiChannel] = useState(1); // 1-16, exibido pro usuário; convertido pra 0-based só na hora de enviar.
   const [audioInputs, setAudioInputs] = useState<AudioInputDeviceInfo[]>([]);
-  const [audioInputDeviceId, setAudioInputDeviceId] = useState<string>('');
+  const [audioInputDeviceId, setAudioInputDeviceId] = useState<string>(SYSTEM_DEFAULT_AUDIO_INPUT_ID);
 
   // MIDI e áudio são carregados/tratados INDEPENDENTEMENTE um do outro — uma
   // falha num não pode esconder nem bloquear o outro (ver bug real: MIDI
@@ -199,7 +200,9 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       await requestAudioInputPermission();
       const ins = await listAudioInputDevices();
       setAudioInputs(ins);
-      setAudioInputDeviceId((prev) => (ins.some((d) => d.id === prev) ? prev : ins[0]?.id ?? ''));
+      setAudioInputDeviceId((prev) =>
+        prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID || ins.some((d) => d.id === prev) ? prev : SYSTEM_DEFAULT_AUDIO_INPUT_ID
+      );
       if (ins.length === 0) {
         setAudioError('Permissão concedida, mas nenhum dispositivo de entrada de áudio foi encontrado. Confira se o driver de loopback (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) está instalado.');
       }
@@ -307,6 +310,9 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   function validateBeforeStart(): string | null {
     if (rangeEndNote < rangeStartNote) return 'Range End precisa ser >= Range Start.';
     if (!midiOutputId) return 'Escolha uma porta MIDI de saída (roteada até a entrada MIDI do Kontakt).';
+    if (!audioPermissionRequested) {
+      return 'Clique em "Conceder permissão de áudio" antes de começar (necessário mesmo escolhendo "Padrão do sistema").';
+    }
     if (!audioInputDeviceId) return 'Escolha um dispositivo de entrada de áudio (roteado da saída do Kontakt, via loopback).';
     if (!outputMrq && !outputSf2) return 'Escolha pelo menos um formato de saída (.mrq e/ou .sf2).';
     if (autoLoop !== 'none' && (autoLoopStartPct < 0 || autoLoopStartPct >= autoLoopEndPct || autoLoopEndPct > 100)) {
@@ -600,7 +606,8 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
               <div className="field-row">
                 <div className="label">Dispositivo</div>
                 <select value={audioInputDeviceId} onChange={(e) => setAudioInputDeviceId(e.target.value)} disabled={running || audioLoading}>
-                  {audioInputs.length === 0 && <option value="">Nenhum dispositivo encontrado</option>}
+                  {/* "Padrão do sistema" sempre disponível (não depende de enumerateDevices ter achado nada com label) — ver SYSTEM_DEFAULT_AUDIO_INPUT_ID em autoSampler.ts e o mesmo padrão já usado no seletor de saída em SettingsModal.tsx. */}
+                  <option value={SYSTEM_DEFAULT_AUDIO_INPUT_ID}>Padrão do sistema</option>
                   {audioInputs.map((d) => (
                     <option key={d.id} value={d.id}>{d.label}</option>
                   ))}

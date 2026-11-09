@@ -120,6 +120,22 @@ export interface AudioInputDeviceInfo {
   label: string;
 }
 
+/**
+ * Valor sentinela pra "Padrão do sistema" no seletor de entrada de áudio —
+ * mesma ideia já usada pro seletor de saída em SettingsModal.tsx (`<option
+ * value="">Padrão do sistema</option>`), só que aqui não dá pra reusar uma
+ * string vazia porque `''` já significa "nenhum dispositivo escolhido
+ * ainda" em `AutoSamplerDialog.tsx` (estado inicial antes da permissão ser
+ * concedida/da lista carregar). Com um dispositivo específico (`{ exact:
+ * deviceId }`), o Auto Sampler quebra se o usuário trocar o cabo/driver de
+ * loopback entre sessões e o id mudar; com este valor, a captura simplesmente
+ * pede `audio: true` sem restrição de deviceId, deixando o sistema
+ * operacional escolher o dispositivo de entrada padrão atual — mais robusto
+ * pro fluxo real de loopback (BlackHole/VB-Audio Virtual Cable/monitor do
+ * PulseAudio), que não raro é também configurado como entrada padrão do SO.
+ */
+export const SYSTEM_DEFAULT_AUDIO_INPUT_ID = '__system_default__';
+
 /** Pede permissão de entrada de áudio UMA vez (sem manter nada aberto) — necessário antes de `listAudioInputDevices` devolver nomes reais de dispositivo (por privacidade, o navegador/WebView só revela `label` depois de uma permissão concedida). */
 export async function requestAudioInputPermission(): Promise<void> {
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -314,7 +330,12 @@ export class AutoSamplerSession {
   private async setupAudio(deviceId: string): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
-        deviceId: { exact: deviceId },
+        // "Padrão do sistema" (ver SYSTEM_DEFAULT_AUDIO_INPUT_ID) não manda
+        // restrição nenhuma de deviceId — deixa o SO escolher o dispositivo
+        // de entrada padrão atual, em vez de travar num id específico que
+        // pode nem existir mais (driver de loopback reinstalado, outra
+        // porta USB, etc.).
+        ...(deviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? {} : { deviceId: { exact: deviceId } }),
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
