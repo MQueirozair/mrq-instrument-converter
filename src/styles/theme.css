@@ -1423,7 +1423,14 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 /* Teclado visual "Sample Note Range" (ver SampleNoteRangeKeyboard.tsx). */
 .as-keyboard-section h4 { font-weight: 500; font-size: 11.5px; color: var(--text-2); white-space: normal; }
 .as-keyboard-wrap { width: 100%; }
-.as-keyboard-svg { width: 100%; display: block; user-select: none; touch-action: none; }
+/* Altura FIXA em px — o SVG usa preserveAspectRatio="none" de propósito (ver
+   SampleNoteRangeKeyboard.tsx), então sem uma altura explícita aqui o
+   navegador cai pro aspect-ratio intrínseco do viewBox (unidades de largura
+   ~= unidades de altura, já que o viewBox é dimensionado em "unidades de
+   tecla branca", não em pixels), o que deixava o teclado gigante/quase
+   quadrado. Com altura fixa, o teclado sempre fica baixo e largo (uma tira
+   horizontal), não importa a largura do modal. */
+.as-keyboard-svg { width: 100%; height: 92px; display: block; user-select: none; touch-action: none; }
 .as-kb-rangebar-bg { fill: #1b1e24; }
 .as-kb-rangebar-fill { fill: #3a6ea5; opacity: 0.9; }
 .as-kb-handle { fill: #e8e8e8; opacity: 0.9; }
