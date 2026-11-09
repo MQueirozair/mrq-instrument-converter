@@ -30,6 +30,10 @@
     "updater:allow-download-and-install",
     "process:default",
     "process:allow-restart",
-    "midi:default"
+    "midi:default",
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [{ "path": "**" }]
+    }
   ]
 }

@@ -99,7 +99,17 @@ Nesse caso, confira nesta ordem:
    configurações de MIDI do Kontakt standalone e confirme que a porta
    virtual escolhida no Auto Sampler aparece marcada/ativa lá dentro — ter
    a porta só criada no sistema operacional não é suficiente, o Kontakt
-   também precisa estar configurado pra escutar nela.
+   também precisa estar configurado pra escutar nela. Cuidado em
+   particular com o caso em que a tela **Engine > MIDI > Inputs** do
+   Kontakt só lista uma interface física (ex.: "UMX 610") e nada mais: se
+   a porta escolhida no Auto Sampler for uma porta MIDI virtual (loopMIDI
+   no Windows, IAC no macOS, etc.) e essa porta virtual não aparecer
+   nessa lista, o Kontakt simplesmente nunca vai ver as notas, mesmo que
+   o Auto Sampler esteja mandando tudo certinho. Nesse caso: ou crie/
+   habilite a porta virtual para que ela apareça na lista de Inputs do
+   Kontakt, ou escolha no Auto Sampler a própria interface física que
+   aparece aí (só funciona se a saída MIDI dela estiver fisicamente
+   cabeada de volta pra entrada MIDI dela mesma ou do Kontakt).
 2. **O canal MIDI bate?** Se o Kontakt (ou um Multi dentro dele) só
    escuta um canal específico, o canal escolhido no Auto Sampler precisa
    ser o mesmo.
