@@ -17,9 +17,30 @@ ver limitação de round robin abaixo).
 1. **Kontakt aberto standalone**, com o instrumento que você quer amostrar
    já carregado.
 2. **Uma porta MIDI virtual** roteando a saída MIDI deste app até a entrada
-   MIDI do Kontakt:
-   - **Windows**: instale um driver de porta MIDI virtual (ex.: loopMIDI)
-     e configure o Kontakt pra escutar nessa porta.
+   MIDI do Kontakt — **sem isso, a tela "Saída MIDI (para o Kontakt)" só vai
+   oferecer portas que não servem pra isso** (ex.: "Microsoft GS Wavetable
+   Synth" no Windows, que é o sintetizador interno do Windows — ele só
+   *recebe* MIDI pra tocar sozinho, nenhum outro programa consegue "ouvir"
+   ele, então escolhê-lo não leva nada até o Kontakt):
+   - **Windows**: instale o [loopMIDI](https://www.tobias-erichsen.de/software/loopmidi.html)
+     (gratuito, padrão da indústria pra isso — **instale como
+     Administrador**), abra o programa e crie uma porta (ex.: "MRQ to
+     Kontakt") — ele fica rodando minimizado na bandeja do sistema.
+     Depois, no Kontakt, vá em **Options → MIDI → Inputs**: a porta
+     criada precisa aparecer do lado de qualquer interface física que já
+     esteja listada (ex.: um teclado USB) — clique nela pra ativar.
+     Escolha essa mesma porta aqui no app (não a interface física, que é
+     só *entrada* de um teclado real, nem o "Microsoft GS Wavetable
+     Synth").
+     - **Se a porta do loopMIDI não aparecer no Kontakt** (bug conhecido e
+       atual do novo stack "Windows MIDI 2.0" do Windows 11, que esconde
+       portas virtuais recém-criadas até o serviço de MIDI ser
+       reiniciado): abra o **Prompt de Comando como Administrador** e
+       rode `net stop midisrv` seguido de `net start midisrv`, ou instale
+       o app gratuito **"Windows MIDI Services"** da Microsoft Store (tem
+       um botão "Restart MIDI" que resolve na hora). Pode ser necessário
+       repetir isso a cada reinicialização do Windows até a Microsoft
+       lançar a correção definitiva desse stack.
    - **macOS**: use o "IAC Driver" já embutido no Audio MIDI Setup (Rede
      MIDI) — não precisa instalar nada.
    - **Linux**: crie uma porta virtual com `aconnect`/`a2jmidid` (ALSA) ou

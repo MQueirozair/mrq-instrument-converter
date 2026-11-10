@@ -45,8 +45,11 @@ import {
 import {
   AutoSamplerCancelledError,
   AutoSamplerSession,
+  isNativeLoopbackDeviceId,
+  isNativeLoopbackSupported,
   listAudioInputDevices,
   listMidiOutputs,
+  listNativeLoopbackDevices,
   previewMidiNote,
   requestAudioInputPermission,
   SYSTEM_DEFAULT_AUDIO_INPUT_ID,
@@ -143,6 +146,8 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   const [midiOutputId, setMidiOutputId] = useState<string>('');
   const [midiChannel, setMidiChannel] = useState(1); // 1-16, exibido pro usuário; convertido pra 0-based só na hora de enviar.
   const [audioInputs, setAudioInputs] = useState<AudioInputDeviceInfo[]>([]);
+  /** Só vira `true` no Windows (ver `isNativeLoopbackSupported`/loopback_audio.rs) — controla se os dispositivos de loopback nativo entram na lista de "Dispositivo" abaixo, como alternativa ao cabo de áudio virtual (BlackHole/VB-Audio Virtual Cable). */
+  const [nativeLoopbackSupported, setNativeLoopbackSupported] = useState(false);
   const [audioInputDeviceId, setAudioInputDeviceId] = useState<string>(SYSTEM_DEFAULT_AUDIO_INPUT_ID);
 
   // MIDI e áudio são carregados/tratados INDEPENDENTEMENTE um do outro — uma
@@ -196,24 +201,42 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   async function loadAudioInputs() {
     setAudioLoading(true);
     setAudioError(null);
+    // Loopback nativo e getUserMedia sao buscados INDEPENDENTEMENTE -- o
+    // nativo nao precisa (nem pede) nenhuma permissao de SO, entao uma
+    // permissao de microfone negada nao pode esconder as opcoes nativas que
+    // ja funcionariam sem instalar nada (ver NATIVE_LOOPBACK_PREFIX em
+    // autoSampler.ts).
+    const combined: AudioInputDeviceInfo[] = [];
+    if (nativeLoopbackSupported) {
+      try {
+        combined.push(...(await listNativeLoopbackDevices()));
+      } catch {
+        /* lista nativa e so um complemento -- uma falha aqui nao deveria impedir de tentar o getUserMedia normal abaixo. */
+      }
+    }
     try {
       await requestAudioInputPermission();
       const ins = await listAudioInputDevices();
-      setAudioInputs(ins);
-      setAudioInputDeviceId((prev) =>
-        prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID || ins.some((d) => d.id === prev) ? prev : SYSTEM_DEFAULT_AUDIO_INPUT_ID
-      );
-      if (ins.length === 0) {
-        setAudioError('Permissão concedida, mas nenhum dispositivo de entrada de áudio foi encontrado. Confira se o driver de loopback (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) está instalado.');
-      }
+      combined.push(...ins);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setAudioError(
-        `Permissão de microfone/entrada de áudio negada ou descartada pelo sistema (${message}). No Windows: abra Configurações > Privacidade e segurança > Microfone e confira se "Acesso ao microfone" e "Permitir que aplicativos de área de trabalho acessem seu microfone" estão LIGADOS — sem isso, o WebView nem chega a mostrar o pedido de permissão, ele já volta negado. No macOS/Linux, confira as permissões de microfone do sistema para este app. Depois, clique em "Tentar de novo".`
-      );
-    } finally {
-      setAudioLoading(false);
+      // So trava com erro se nao sobrou NENHUMA opcao (nem nativa, nem
+      // getUserMedia) -- com loopback nativo disponivel, a permissao de
+      // microfone negada deixa de ser bloqueante.
+      if (combined.length === 0) {
+        setAudioError(
+          `Permissão de microfone/entrada de áudio negada ou descartada pelo sistema (${message}). No Windows: abra Configurações > Privacidade e segurança > Microfone e confira se "Acesso ao microfone" e "Permitir que aplicativos de área de trabalho acessem seu microfone" estão LIGADOS — sem isso, o WebView nem chega a mostrar o pedido de permissão, ele já volta negado. No macOS/Linux, confira as permissões de microfone do sistema para este app. Depois, clique em "Tentar de novo".`
+        );
+      }
     }
+    setAudioInputs(combined);
+    setAudioInputDeviceId((prev) =>
+      prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID || combined.some((d) => d.id === prev) ? prev : SYSTEM_DEFAULT_AUDIO_INPUT_ID
+    );
+    if (combined.length === 0 && !audioError) {
+      setAudioError('Permissão concedida, mas nenhum dispositivo de entrada de áudio foi encontrado. Confira se o driver de loopback (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) está instalado.');
+    }
+    setAudioLoading(false);
   }
 
   useEffect(() => {
@@ -228,6 +251,12 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     // pedido realmente tem a chance de aparecer em primeiro plano, e dá um
     // sinal claro de causa quando falha mesmo assim.
     setAudioLoading(false);
+    // Checagem silenciosa (não pede permissão nenhuma, não lança erro
+    // visível) — `isNativeLoopbackSupported` já devolve `false` em qualquer
+    // SO sem suporte (ver autoSampler.ts), então só precisa decidir se a
+    // lista de dispositivos nativos entra ou não quando o usuário clicar em
+    // "Conceder permissão de áudio"/"Atualizar dispositivos de áudio".
+    void isNativeLoopbackSupported().then(setNativeLoopbackSupported);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -260,7 +289,13 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     void previewMidiNote(midiOutputId, midiChannel - 1, note);
   }
 
-  const levelMeterEnabled = !running && audioInputDeviceId !== '';
+  // Loopback nativo não passa por `getUserMedia` (ver NATIVE_LOOPBACK_PREFIX
+  // em autoSampler.ts) — o medidor ao vivo normal não tem como abrir um
+  // segundo stream pra um id que nem é um MediaDeviceInfo de verdade, então
+  // fica desligado pra essas entradas (o Input Gain continua funcionando
+  // normalmente na captura de qualquer forma).
+  const usingNativeLoopbackUi = isNativeLoopbackDeviceId(audioInputDeviceId);
+  const levelMeterEnabled = !running && audioInputDeviceId !== '' && !usingNativeLoopbackUi;
   const { levels: meterLevels, error: meterError } = useInputLevelMeter(audioInputDeviceId, levelMeterEnabled, inputGainDb);
 
   const loadingDevices = midiLoading || audioLoading;
@@ -610,6 +645,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
               {!audioPermissionRequested && !audioLoading && (
                 <div className="hint" style={{ marginBottom: 6 }}>
                   Clique abaixo pra pedir permissão de microfone/entrada de áudio ao sistema e listar os dispositivos disponíveis.
+                  {nativeLoopbackSupported && ' As opções "(loopback nativo)" não precisam de cabo de áudio virtual nenhum (BlackHole/VB-Audio Virtual Cable) — gravam direto do dispositivo de saída escolhido.'}
                 </div>
               )}
               <div className="field-row">
@@ -617,9 +653,16 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                 <select value={audioInputDeviceId} onChange={(e) => setAudioInputDeviceId(e.target.value)} disabled={running || audioLoading}>
                   {/* "Padrão do sistema" sempre disponível (não depende de enumerateDevices ter achado nada com label) — ver SYSTEM_DEFAULT_AUDIO_INPUT_ID em autoSampler.ts e o mesmo padrão já usado no seletor de saída em SettingsModal.tsx. */}
                   <option value={SYSTEM_DEFAULT_AUDIO_INPUT_ID}>Padrão do sistema</option>
-                  {audioInputs.map((d) => (
+                  {audioInputs.filter((d) => !isNativeLoopbackDeviceId(d.id)).map((d) => (
                     <option key={d.id} value={d.id}>{d.label}</option>
                   ))}
+                  {audioInputs.some((d) => isNativeLoopbackDeviceId(d.id)) && (
+                    <optgroup label="Loopback nativo (sem instalar nada)">
+                      {audioInputs.filter((d) => isNativeLoopbackDeviceId(d.id)).map((d) => (
+                        <option key={d.id} value={d.id}>{d.label}</option>
+                      ))}
+                    </optgroup>
+                  )}
                 </select>
               </div>
               <div className="field-row">
@@ -627,13 +670,19 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                 <input type="range" min={-24} max={24} step={0.5} value={inputGainDb} disabled={running} onChange={(e) => setInputGainDb(Number(e.target.value))} />
                 <div className="hint" style={{ minWidth: 48, textAlign: 'right' }}>{inputGainDb > 0 ? '+' : ''}{inputGainDb.toFixed(1)}dB</div>
               </div>
-              {audioInputDeviceId && !running && (
-                <div className="as-level-meters">
-                  <LevelMeterBar label="L" db={meterLevels.l} />
-                  <LevelMeterBar label="R" db={meterLevels.r} />
+              {usingNativeLoopbackUi ? (
+                <div className="hint" style={{ marginTop: 4 }}>
+                  Medidor ao vivo não disponível pro loopback nativo (o Input Gain continua funcionando normalmente na captura) — toque uma nota no Kontakt e confira pelo "Voices" dele que está soando.
                 </div>
+              ) : (
+                audioInputDeviceId && !running && (
+                  <div className="as-level-meters">
+                    <LevelMeterBar label="L" db={meterLevels.l} />
+                    <LevelMeterBar label="R" db={meterLevels.r} />
+                  </div>
+                )
               )}
-              {meterError && (
+              {meterError && !usingNativeLoopbackUi && (
                 <div className="hint" style={{ color: '#e0b84a' }}>{meterError} (o Input Gain ainda funciona normalmente na captura — só o medidor ao vivo não abriu.)</div>
               )}
               {audioError && (

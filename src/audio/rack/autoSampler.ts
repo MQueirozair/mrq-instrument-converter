@@ -29,6 +29,7 @@
  *    testado automaticamente aqui, só pelo usuário na própria máquina.
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import { writeFile } from '@tauri-apps/plugin-fs';
 import {
   mrqBuilderAbort,
@@ -207,6 +208,45 @@ export async function listAudioInputDevices(): Promise<AudioInputDeviceInfo[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Loopback de áudio NATIVO (ver src-tauri/src/loopback_audio.rs) — grava
+// diretamente o que um dispositivo de SAÍDA de áudio está tocando via WASAPI
+// (só Windows por enquanto), sem precisar de nenhum cabo de áudio virtual
+// (BlackHole/VB-Audio Virtual Cable) nem de `getUserMedia`. Representado na
+// UI como entradas a mais no MESMO seletor de "dispositivo de entrada" (ver
+// AutoSamplerDialog.tsx) — por isso usam o mesmo tipo `AudioInputDeviceInfo`,
+// só com o `id` prefixado por `NATIVE_LOOPBACK_PREFIX` pra `AutoSamplerSession`
+// saber, em `setupAudio`, que precisa tomar o caminho nativo em vez do
+// `getUserMedia` normal.
+// ---------------------------------------------------------------------------
+
+/** Prefixo que marca um `AudioInputDeviceInfo.id` como loopback nativo (o resto do id, depois do prefixo, é o nome do dispositivo de SAÍDA a capturar — vazio = dispositivo de saída padrão do sistema). Ver `isNativeLoopbackDeviceId`/`nativeLoopbackDeviceNameFromId`. */
+export const NATIVE_LOOPBACK_PREFIX = '__native_loopback__:';
+
+export function isNativeLoopbackDeviceId(id: string): boolean {
+  return id.startsWith(NATIVE_LOOPBACK_PREFIX);
+}
+
+function nativeLoopbackDeviceNameFromId(id: string): string | undefined {
+  const name = id.slice(NATIVE_LOOPBACK_PREFIX.length);
+  return name.length > 0 ? name : undefined;
+}
+
+/** Só Windows por enquanto — ver `loopback_is_supported` em loopback_audio.rs (no macOS/Linux sempre devolve `false`, sem lançar erro, pra UI simplesmente esconder a opção). */
+export async function isNativeLoopbackSupported(): Promise<boolean> {
+  try {
+    return await invoke<boolean>('loopback_is_supported');
+  } catch {
+    return false;
+  }
+}
+
+/** Lista os dispositivos de SAÍDA de áudio disponíveis pra capturar por loopback nativo — já no formato `AudioInputDeviceInfo` (id prefixado, ver `NATIVE_LOOPBACK_PREFIX`), pronto pra entrar na mesma lista/seletor dos dispositivos de entrada normais. Chame só depois de confirmar `isNativeLoopbackSupported()` — em SOs sem suporte, rejeita com a mensagem de erro de `loopback_list_devices`. */
+export async function listNativeLoopbackDevices(): Promise<AudioInputDeviceInfo[]> {
+  const names = await invoke<string[]>('loopback_list_devices');
+  return names.map((name) => ({ id: NATIVE_LOOPBACK_PREFIX + name, label: `${name} (loopback nativo)` }));
+}
+
+// ---------------------------------------------------------------------------
 // Execução da sessão de captura
 // ---------------------------------------------------------------------------
 
@@ -320,6 +360,9 @@ export class AutoSamplerSession {
   private silentGain: GainNode | null = null;
   private recording = false;
   private recordedChunks: Float32Array[][] = [];
+  /** `true` quando `setupAudio` tomou o caminho de loopback nativo (ver NATIVE_LOOPBACK_PREFIX) em vez de `getUserMedia` — muda o comportamento de `captureOneTask`/`teardownAudio` pros comandos Tauri `loopback_*` em vez do grafo Web Audio normal. */
+  private usingNativeLoopback = false;
+  private nativeLoopbackInfo: { sampleRateHz: number; channels: number } | null = null;
 
   cancel(): void {
     this.cancelled = true;
@@ -396,6 +439,13 @@ export class AutoSamplerSession {
   }
 
   private async setupAudio(deviceId: string): Promise<void> {
+    if (isNativeLoopbackDeviceId(deviceId)) {
+      const deviceName = nativeLoopbackDeviceNameFromId(deviceId);
+      const info = await invoke<{ sampleRateHz: number; channels: number; deviceName: string }>('loopback_start', { deviceName });
+      this.usingNativeLoopback = true;
+      this.nativeLoopbackInfo = { sampleRateHz: info.sampleRateHz, channels: info.channels };
+      return;
+    }
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         // "Padrão do sistema" (ver SYSTEM_DEFAULT_AUDIO_INPUT_ID) não manda
@@ -427,6 +477,19 @@ export class AutoSamplerSession {
   }
 
   private teardownAudio(): void {
+    if (this.usingNativeLoopback) {
+      this.usingNativeLoopback = false;
+      this.nativeLoopbackInfo = null;
+      // Fire-and-forget de propósito: se a sessão nativa já caiu sozinha
+      // (ex.: dispositivo desconectado no meio da captura) não há nada de
+      // útil a fazer aqui além de tentar limpar o estado do lado Rust —
+      // nunca deixa um erro de "parar" mascarar o resultado de verdade da
+      // sessão (que já terminou de capturar quando chegamos aqui).
+      invoke('loopback_stop').catch(() => {
+        /* ver comentário acima. */
+      });
+      return;
+    }
     try {
       this.processorNode?.disconnect();
     } catch {
@@ -479,6 +542,7 @@ export class AutoSamplerSession {
     task: AutoSamplerTask,
     options: AutoSamplerRunOptions
   ): Promise<{ interleaved: Float32Array; sampleRateHz: number; channels: number }> {
+    if (this.usingNativeLoopback) return this.captureOneTaskNative(task, options);
     if (!this.processorNode || !this.midiOutput || !this.audioCtx) {
       throw new Error('sessão de Auto Sampler não inicializada corretamente (MIDI/áudio).');
     }
@@ -524,6 +588,43 @@ export class AutoSamplerSession {
     if (options.config.oneShot) processed = trimTrailingSilence(processed, channelCount);
 
     return { interleaved: processed, sampleRateHz: this.audioCtx.sampleRate, channels: channelCount };
+  }
+
+  /** Mesmo papel/timing de `captureOneTask`, só que pelo caminho de loopback nativo (ver NATIVE_LOOPBACK_PREFIX/setupAudio) — "gravar" vira `loopback_set_recording(true/false)` em volta do mesmo note-on/sustain/note-off/release por MIDI, e o buffer acumulado do lado Rust (não um `ScriptProcessorNode`) é drenado no final via `loopback_take_recorded`, já intercalado (o Rust acumula `&[f32]` intercalado igual o `Data`/`InputCallbackInfo` do cpal entrega), então não precisa do laço de "desintercalar por canal" que o caminho getUserMedia usa. */
+  private async captureOneTaskNative(
+    task: AutoSamplerTask,
+    options: AutoSamplerRunOptions
+  ): Promise<{ interleaved: Float32Array; sampleRateHz: number; channels: number }> {
+    if (!this.midiOutput || !this.nativeLoopbackInfo) {
+      throw new Error('sessão de Auto Sampler não inicializada corretamente (MIDI/loopback nativo).');
+    }
+    if (this.cancelled) throw new AutoSamplerCancelledError();
+
+    await invoke('loopback_set_recording', { recording: true });
+
+    const channel = options.midiChannel & 0x0f;
+    try {
+      this.midiOutput.send([0x90 | channel, task.note, task.velocity]);
+      await this.cancellableDelay(options.config.sustainSeconds * 1000);
+      this.midiOutput.send([0x80 | channel, task.note, 0]);
+      await this.cancellableDelay(options.config.releaseTailSeconds * 1000);
+    } finally {
+      await invoke('loopback_set_recording', { recording: false }).catch(() => {
+        /* se a sessão nativa já caiu sozinha, não há nada de útil a fazer aqui — o erro de verdade (se houver) já veio do bloco try acima. */
+      });
+    }
+
+    await this.cancellableDelay(INTER_TASK_GAP_SECONDS * 1000);
+
+    const samples = await invoke<number[]>('loopback_take_recorded');
+    const channelCount = this.nativeLoopbackInfo.channels;
+    const interleaved = Float32Array.from(samples);
+
+    let processed = applyGainDb(interleaved, options.inputGainDb);
+    processed = trimLeadingSilence(processed, channelCount);
+    if (options.config.oneShot) processed = trimTrailingSilence(processed, channelCount);
+
+    return { interleaved: processed, sampleRateHz: this.nativeLoopbackInfo.sampleRateHz, channels: channelCount };
   }
 }
 

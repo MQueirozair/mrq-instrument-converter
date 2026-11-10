@@ -84,6 +84,22 @@ symphonia = { version = "0.6", features = ["aiff", "mp3"] }
 gtk = "0.18"
 webkit2gtk = { version = "2.0", features = ["v2_40"] }
 
+# Captura de áudio por "loopback" nativo (ver src-tauri/src/loopback_audio.rs)
+# — grava diretamente o que um dispositivo de SAÍDA está tocando via WASAPI
+# (Windows), sem precisar de cabo de áudio virtual (VB-Audio Virtual
+# Cable). Só Windows por enquanto: no macOS/Linux o fluxo existente de
+# getUserMedia + driver de loopback (BlackHole / monitor do
+# PulseAudio-PipeWire) já cobre o caso sem precisar desta dependência extra.
+#
+# Nota: fixado em 0.15 (não a última, 0.18) de propósito — a partir da 0.16 a
+# API do cpal mudou bastante (Device::name() saiu da trait, build_input_stream
+# passou a receber o StreamConfig por valor em vez de referência, os vários
+# tipos de erro específicos (BuildStreamError, DeviceNameError, etc.) viraram
+# um único cpal::Error). A 0.15.x é a versão amplamente documentada/usada em
+# tutoriais e é a que bate com o código em loopback_audio.rs.
+[target.'cfg(target_os = "windows")'.dependencies]
+cpal = "0.15.3"
+
 [features]
 # Permite rodar sem o bundle de produção durante o dev, usando o dev-server do Vite.
 custom-protocol = ["tauri/custom-protocol"]

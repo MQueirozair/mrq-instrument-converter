@@ -2,6 +2,7 @@ mod fsops;
 mod importers;
 #[cfg(target_os = "linux")]
 mod linux_media;
+mod loopback_audio;
 mod logging;
 mod migration;
 mod mrq;
@@ -178,6 +179,11 @@ pub fn run() {
             // e o backend de empacotamento/leitura — ver docs/mrq-converter-architecture.md).
             app.manage(mrq::writer::MrqBuilderState::default());
 
+            // Captura de áudio por loopback nativo (só Windows por enquanto,
+            // ver loopback_audio.rs) — alternativa ao cabo de áudio virtual
+            // (VB-Audio Virtual Cable) pro Auto Sampler.
+            app.manage(loopback_audio::new_state());
+
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 if let Some(log) = app_handle.try_state::<Arc<LogState>>() {
@@ -232,6 +238,12 @@ pub fn run() {
             importers::commands::mrq_convert_audio_file_to_mrq,
             importers::commands::mrq_capture_probe_audio_file,
             importers::commands::mrq_capture_add_sample,
+            loopback_audio::loopback_is_supported,
+            loopback_audio::loopback_list_devices,
+            loopback_audio::loopback_start,
+            loopback_audio::loopback_set_recording,
+            loopback_audio::loopback_take_recorded,
+            loopback_audio::loopback_stop,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao rodar a aplicação Tauri");
