@@ -1447,6 +1447,15 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .as-kb-legend-in { background: #c9ccd1; }
 .as-kb-legend-out { background: #2a2d33; }
 
+/* Teclado "de verdade" do Controlador MIDI (PlayableKeyboard.tsx) — tocar/segurar, sem faixa de amostragem. */
+.playable-kb-wrap { width: 100%; }
+.playable-kb-svg { width: 100%; height: 110px; display: block; user-select: none; touch-action: none; }
+.playable-kb-white { fill: #e8e8e8; }
+.playable-kb-white-active { fill: #4f8ac9; }
+.playable-kb-black { fill: #16181c; }
+.playable-kb-black-active { fill: #2f5b8a; }
+.playable-kb-octave-label { fill: var(--text-2); font-size: 2.2px; }
+
 /* Gráfico de breakpoints de Velocity Response (ver VelocityBreakpointEditor.tsx). */
 .as-velocity-editor { margin-top: 8px; }
 .as-vel-layer-label { fill: #fff; font-size: 8px; opacity: 0.85; }

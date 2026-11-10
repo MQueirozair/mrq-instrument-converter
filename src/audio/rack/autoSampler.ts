@@ -116,6 +116,62 @@ export async function previewMidiNote(outputId: string, channel: number, note: n
   }
 }
 
+/**
+ * Note on/off DE VERDADE (sustentada, sem duração fixa) — base do
+ * "Controlador MIDI" (ver MidiControllerDialog.tsx), um teclado que o
+ * usuário pode tocar/segurar de verdade pra testar, ao vivo, se a porta
+ * MIDI escolhida está mesmo chegando no Kontakt (diagnóstico direto pro
+ * problema "o Kontakt não toca as notas" — complementa o aviso de
+ * silêncio do Auto Sampler e o guia de roteamento em
+ * docs/mrq-instrument-converter/mrq-auto-sampler.md, mas sem precisar
+ * configurar uma sessão de captura inteira só pra testar a porta).
+ * Diferente de `previewMidiNote` (nota curta, duração fixa, usada só pra
+ * pré-ouvir o instrumento no seletor de faixa), estas aqui propagam o erro
+ * pro chamador em vez de engolir silenciosamente — o Controlador MIDI
+ * PRECISA saber se o send falhou, pra mostrar isso na tela (é a
+ * ferramenta de diagnóstico, não teria sentido ela mascarar falhas).
+ */
+export async function sendMidiNoteOn(outputId: string, channel: number, note: number, velocity = 100): Promise<void> {
+  const access = await getMidiAccess();
+  const output = access.outputs.get(outputId);
+  if (!output) throw new Error('porta MIDI não encontrada — pode ter sido desconectada.');
+  const ch = channel & 0x0f;
+  const clampedNote = Math.max(0, Math.min(127, Math.round(note)));
+  const clampedVel = Math.max(1, Math.min(127, Math.round(velocity)));
+  output.send([0x90 | ch, clampedNote, clampedVel]);
+}
+
+export async function sendMidiNoteOff(outputId: string, channel: number, note: number): Promise<void> {
+  const access = await getMidiAccess();
+  const output = access.outputs.get(outputId);
+  if (!output) return; // já era — não faz sentido falhar um note-off de limpeza.
+  const ch = channel & 0x0f;
+  const clampedNote = Math.max(0, Math.min(127, Math.round(note)));
+  output.send([0x80 | ch, clampedNote, 0]);
+}
+
+/** "Pânico" — manda All Notes Off (CC 123) + All Sound Off (CC 120) nos 16 canais MIDI, não só no canal selecionado
+ *  (cobre o caso de o usuário ter trocado de canal no meio de uma nota segurada, ou de alguma nota ter ficado presa
+ *  por causa de uma troca de porta/desconexão). Nunca lança — é um botão de emergência, precisa sempre "funcionar"
+ *  silenciosamente mesmo se a porta já não existir mais. */
+export async function sendMidiAllNotesOff(outputId: string): Promise<void> {
+  try {
+    const access = await getMidiAccess();
+    const output = access.outputs.get(outputId);
+    if (!output) return;
+    for (let ch = 0; ch < 16; ch += 1) {
+      try {
+        output.send([0xb0 | ch, 123, 0]);
+        output.send([0xb0 | ch, 120, 0]);
+      } catch {
+        /* segue tentando os outros canais mesmo se um falhar. */
+      }
+    }
+  } catch {
+    /* botão de pânico — nunca deve ele mesmo precisar de tratamento de erro na UI. */
+  }
+}
+
 export interface AudioInputDeviceInfo {
   id: string;
   label: string;

@@ -44,6 +44,7 @@ import {
   FolderSearch,
   Loader2,
   Pause,
+  Piano,
   Play,
   Save,
   Settings2,
@@ -77,6 +78,7 @@ import MrqInstrumentAnalyzer, { type AnalyzerSource } from './MrqInstrumentAnaly
 import MappingEditor from './MappingEditor';
 import KontaktCaptureDialog, { type KontaktCaptureResult } from './KontaktCaptureDialog';
 import AutoSamplerDialog, { type AutoSamplerResult } from './AutoSamplerDialog';
+import MidiControllerDialog from './MidiControllerDialog';
 import { useStore } from '../state/useStore';
 import { isTauriRuntime } from '../runtimeEnv';
 
@@ -195,6 +197,7 @@ function InstrumentConverterInner() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
   const [autoSamplerDialogOpen, setAutoSamplerDialogOpen] = useState(false);
+  const [midiControllerDialogOpen, setMidiControllerDialogOpen] = useState(false);
   const [mappingEditorItemId, setMappingEditorItemId] = useState<string | null>(null);
   const pushToast = useStore((s) => s.pushToast);
 
@@ -475,6 +478,9 @@ function InstrumentConverterInner() {
           <button className="btn ghost" onClick={() => setAutoSamplerDialogOpen(true)}>
             <Settings2 size={14} /> Auto Sampler (tocar e gravar o Kontakt automaticamente)…
           </button>
+          <button className="btn ghost" onClick={() => setMidiControllerDialogOpen(true)}>
+            <Piano size={14} /> Controlador MIDI (tocar o Kontakt manualmente)…
+          </button>
           <div className="converter-queue-list">
             {queue.length === 0 && <p className="mrq-tab-hint">Nenhum arquivo na fila ainda.</p>}
             {queue.map((item) => (
@@ -530,6 +536,9 @@ function InstrumentConverterInner() {
       )}
       {autoSamplerDialogOpen && (
         <AutoSamplerDialog onClose={() => setAutoSamplerDialogOpen(false)} onImported={handleAutoSamplerImported} />
+      )}
+      {midiControllerDialogOpen && (
+        <MidiControllerDialog onClose={() => setMidiControllerDialogOpen(false)} />
       )}
       {mappingEditorItemId &&
         (() => {
