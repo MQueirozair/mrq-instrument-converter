@@ -70,23 +70,21 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'MRQ Multitracks Play v__VERSION__'
+          releaseName: 'MRQ Instrument Converter v__VERSION__'
           releaseBody: |
             ## Nesta versão
 
-            - Correção de robustez no boot (blindagem contra tela preta ao
-              abrir o app: qualquer erro fatal antes do React montar agora
-              mostra uma tela de erro com detalhes, em vez de ficar só com a
-              cor de fundo e nada mais).
-            - Novo formato suportado no Rack de instrumentos: bibliotecas de
-              amostra da Nord Sample Library (**.nsmp**, **.nsmp3**,
-              **.nsmp4** — Stage/Electro/Piano/Wave/Grand), decodificadas de
-              verdade (mesmo crate/pipeline Rust/wasm já usado pro .npno).
+            - Novo caminho de captura de áudio pro Auto Sampler no Windows:
+              **loopback nativo** (via WASAPI, mesma técnica do "Captura de
+              Áudio da Área de Trabalho" do OBS Studio) — grava direto o que
+              um dispositivo de SAÍDA está tocando, sem precisar instalar
+              nem rotear nenhum cabo de áudio virtual (BlackHole/VB-Audio
+              Virtual Cable). Aparece como um grupo extra "Loopback nativo
+              (sem instalar nada)" no seletor de "Dispositivo" da tela do
+              Auto Sampler.
 
             **Requisitos:** macOS 10.15 (Catalina) ou mais recente, Windows
-            7+, ou Linux com WebKitGTK. Quem usa macOS 10.12–10.14
-            (Sierra/High Sierra/Mojave) deve continuar na última versão em
-            Electron (v0.1.18).
+            7+, ou Linux com WebKitGTK.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
