@@ -36,6 +36,10 @@ por que nenhuma nota chega: é preciso criar/rotear uma porta MIDI virtual
 primeiro — ver o passo a passo por sistema operacional na seção
 "Pré-requisitos" de [`mrq-auto-sampler.md`](./mrq-auto-sampler.md)
 (IAC Driver no macOS, loopMIDI no Windows, aconnect/a2jmidid no Linux).
+Esse mesmo documento também traz a correção pro bug comum do Windows 11
+onde a porta do loopMIDI não aparece no Kontakt até reiniciar o serviço de
+MIDI (`net stop midisrv` / `net start midisrv`, ou o app "Windows MIDI
+Services" da Microsoft Store).
 
 ## Botão "Pânico"
 
