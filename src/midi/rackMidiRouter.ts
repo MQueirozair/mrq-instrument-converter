@@ -12,6 +12,27 @@ const attached = new Set<MIDIInput>();
 const changeListeners = new Set<() => void>();
 const programChangeListeners = new Set<(program: number) => void>();
 const rawNoteOnListeners = new Set<(note: number) => void>();
+/**
+ * Ouvintes de nota MIDI "crua" (nota + velocity + on/off + canal). Diferente
+ * de `onRackRawNoteOn` (que só entrega a nota, pro "Aprender faixa"), este
+ * aqui entrega velocity e note-off — é o que o Editor de Mapeamento precisa
+ * pra tocar a amostra real da zona correspondente com o controlador USB e
+ * pra implementar "Set Key/Velocity Range via MIDI" igual ao Kontakt.
+ */
+const rawMidiNoteListeners = new Set<(note: number, velocity: number, isNoteOn: boolean, channel: number) => void>();
+
+export interface RawMidiNoteEvent {
+  note: number;
+  velocity: number;
+  isNoteOn: boolean;
+  channel: number;
+}
+
+/** Assina todas as notas físicas recebidas (antes de curva/transposição/filtros). */
+export function onRackRawMidiNote(cb: (note: number, velocity: number, isNoteOn: boolean, channel: number) => void): () => void {
+  rawMidiNoteListeners.add(cb);
+  return () => rawMidiNoteListeners.delete(cb);
+}
 
 /** Avisa quando chega uma mensagem MIDI Program Change (0xC0) — usado pro recall de cenas do rack. */
 export function onRackProgramChange(cb: (program: number) => void): () => void {
@@ -124,6 +145,10 @@ function handleMessage(ev: MIDIMessageEvent) {
   if (command !== 0x90 && command !== 0x80) return;
   const rawNote = data[1];
   const rawVelocity = data[2] ?? 0;
+  if (rawNote >= 0 && rawNote <= 127) {
+    const isRawNoteOn = command === 0x90 && rawVelocity > 0;
+    rawMidiNoteListeners.forEach((cb) => cb(rawNote, rawVelocity, isRawNoteOn, channel));
+  }
   const note = rawNote + transpose;
   if (note < 0 || note > 127) return;
 

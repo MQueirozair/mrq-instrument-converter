@@ -2,7 +2,7 @@
   "name": "mrq-instrument-converter",
   "productName": "MRQ Instrument Converter",
   "private": true,
-  "version": "0.2.11",
+  "version": "0.2.12",
   "description": "MRQ Instrument Converter: conversor de formatos de instrumento (.sf2/.nki/.exs/.syx/Kontakt) para .mrq/.mrqi.",
   "author": "MRQ",
   "main": "dist-electron/electron/main.js",

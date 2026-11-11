@@ -39,7 +39,9 @@ import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-
 import { writeBinaryFileSafe } from '../audio/rack/autoSampler';
 import {
   AlertTriangle,
+  AudioLines,
   CheckCircle2,
+  FileAudio,
   FolderOpen,
   FolderSearch,
   Loader2,
@@ -48,6 +50,7 @@ import {
   Play,
   Save,
   Settings2,
+  Sparkles,
   Trash2,
   Upload,
   XCircle,
@@ -75,7 +78,8 @@ import {
 } from '../audio/rack/mrqFormat';
 import { buildSf2FromMrqInstrument, mrqInstrumentHasExportableZones } from '../audio/rack/mrqToSf2Export';
 import MrqInstrumentAnalyzer, { type AnalyzerSource } from './MrqInstrumentAnalyzer';
-import MappingEditor from './MappingEditor';
+import MappingEditor, { type MappingEditorPlaybackSource } from './MappingEditor';
+import ConverterHome, { type ConverterHomeRecentItem } from './ConverterHome';
 import KontaktCaptureDialog, { type KontaktCaptureResult } from './KontaktCaptureDialog';
 import AutoSamplerDialog, { type AutoSamplerResult } from './AutoSamplerDialog';
 import MidiControllerDialog from './MidiControllerDialog';
@@ -149,6 +153,30 @@ function formatSupportsMappingEdits(item: QueueItem): boolean {
 
 function captureKindLabel(kind: 'kontakt-audio' | 'auto-sampler'): string {
   return kind === 'auto-sampler' ? 'Auto Sampler (Kontakt)' : 'Captura de áudio Kontakt';
+}
+
+/** Define de onde o Editor de Mapeamento tira o PCM real pra pré-escuta por
+ *  MIDI: o .mrq já convertido (qualquer origem) ou, quando a origem já é um
+ *  arquivo de áudio único, o próprio arquivo (decodificado no WebView). */
+function playbackSourceFor(item: QueueItem): MappingEditorPlaybackSource | null {
+  if (item.convertedPath) return { kind: 'mrq', path: item.convertedPath };
+  if (item.format && ['wav', 'aiff', 'flac', 'mp3', 'ogg'].includes(item.format)) {
+    return { kind: 'audio-file', path: item.path };
+  }
+  return null;
+}
+
+function queueStatusLabel(status: QueueStatus): string {
+  switch (status) {
+    case 'pending': return 'na fila';
+    case 'inspecting': return 'analisando';
+    case 'inspected': return 'pronto para converter';
+    case 'inspect-error': return 'erro na análise';
+    case 'converting': return 'convertendo';
+    case 'converted': return 'convertido';
+    case 'convert-error': return 'erro na conversão';
+    default: return status;
+  }
 }
 
 function mappingPersistNote(item: QueueItem): string {
@@ -476,31 +504,53 @@ function InstrumentConverterInner() {
     };
   }, [selected]);
 
+  const recentItems: ConverterHomeRecentItem[] = useMemo(
+    () => [...queue].slice(-5).reverse().map((q) => ({ id: q.id, fileName: q.fileName, status: queueStatusLabel(q.status) })),
+    [queue]
+  );
+
   return (
     <div className="converter-page-outer">
       <div className="converter-page">
         <div className="converter-queue-col">
           <div className="converter-queue-header">
-            <h3>Importar instrumentos</h3>
-            <button className="btn primary" onClick={() => void pickFiles()}>
-              <FolderOpen size={14} /> Escolher arquivos…
-            </button>
+            <div>
+              <h3>Importar instrumentos</h3>
+              <p className="converter-queue-sub">1. Escolha a origem do som</p>
+            </div>
           </div>
+          <button className="converter-primary-import" onClick={() => void pickFiles()}>
+            <FolderOpen size={16} /> Escolher arquivos…
+          </button>
           <div className="converter-dropzone" onClick={() => void pickFiles()}>
-            <Upload size={18} />
-            <span>SF2/SF3, NPNO/NSMP, SYX, EXS, WAV/AIFF/FLAC/MP3/OGG — clique para escolher um ou vários arquivos</span>
+            <Upload size={16} />
+            <span>SF2/SF3 · NPNO/NSMP · SYX · EXS · WAV/AIFF/FLAC/MP3/OGG<br />clique para escolher um ou vários arquivos</span>
           </div>
-          <button className="btn ghost" onClick={() => setCaptureDialogOpen(true)}>
-            <Upload size={14} /> Importar instrumento renderizado pelo Kontakt…
+
+          <div className="converter-section-label">Do Kontakt / ao vivo</div>
+          <button className="converter-action-card" onClick={() => setAutoSamplerDialogOpen(true)}>
+            <span className="converter-action-icon"><Sparkles size={16} /></span>
+            <span className="converter-action-text"><strong>Auto Sampler</strong><span>Toca e grava o Kontakt nota por nota, com assistente e recaptura das notas ruins.</span></span>
           </button>
-          <button className="btn ghost" onClick={() => setAutoSamplerDialogOpen(true)}>
-            <Settings2 size={14} /> Auto Sampler (tocar e gravar o Kontakt automaticamente)…
+          <button className="converter-action-card" onClick={() => setCaptureDialogOpen(true)}>
+            <span className="converter-action-icon"><AudioLines size={16} /></span>
+            <span className="converter-action-text"><strong>Instrumento renderizado</strong><span>Importa WAVs já renderizados pelo Kontakt e monta o .mrq.</span></span>
           </button>
-          <button className="btn ghost" onClick={() => setMidiControllerDialogOpen(true)}>
-            <Piano size={14} /> Controlador MIDI (tocar o Kontakt manualmente)…
+          <button className="converter-action-card" onClick={() => setMidiControllerDialogOpen(true)}>
+            <span className="converter-action-icon"><Piano size={16} /></span>
+            <span className="converter-action-text"><strong>Controlador MIDI</strong><span>Toca o Kontakt manualmente com o teclado USB.</span></span>
           </button>
+
+          <div className="converter-section-label">2. Fila de conversão</div>
+          {queue.length > 0 && (
+            <div className="converter-queue-summary">
+              <span>{queue.length} arquivo(s)</span>
+              <span>{queue.filter((q) => q.status === 'converted').length} convertido(s)</span>
+              {queue.some((q) => q.status.endsWith('error')) && <span>{queue.filter((q) => q.status.endsWith('error')).length} com erro</span>}
+            </div>
+          )}
           <div className="converter-queue-list">
-            {queue.length === 0 && <p className="mrq-tab-hint">Nenhum arquivo na fila ainda.</p>}
+            {queue.length === 0 && <p className="mrq-tab-hint">Nenhum arquivo na fila ainda. Escolha uma das opções acima para começar.</p>}
             {queue.map((item) => (
               <QueueRow
                 key={item.id}
@@ -524,7 +574,9 @@ function InstrumentConverterInner() {
               onExportSoundFont={(ext) => void exportItemToSoundFont(selected, ext)}
             />
           ) : (
-            <div className="converter-preview-strip empty">Selecione um item da fila para inspecionar.</div>
+            <div className="converter-preview-strip empty">
+              <FileAudio size={14} /> Nenhum item selecionado — clique num arquivo da fila ou comece por uma das opções à esquerda
+            </div>
           )}
           <div className="converter-inspector">
             {analyzerSource ? (
@@ -541,10 +593,19 @@ function InstrumentConverterInner() {
                 <p className="mrq-error-text">{selected.error}</p>
               </div>
             ) : (
-              <div className="empty-state">
-                <h3>Inspetor de Instrumentos</h3>
-                <p>Importe e selecione um arquivo na fila à esquerda para ver detalhes de mapeamento, velocity, amostras e compatibilidade.</p>
-              </div>
+              <ConverterHome
+                onPickFiles={() => void pickFiles()}
+                onOpenCapture={() => setCaptureDialogOpen(true)}
+                onOpenAutoSampler={() => setAutoSamplerDialogOpen(true)}
+                onOpenMidi={() => setMidiControllerDialogOpen(true)}
+                queueCount={queue.length}
+                convertedCount={queue.filter((q) => q.status === 'converted').length}
+                errorCount={queue.filter((q) => q.status.endsWith('error')).length}
+                recent={recentItems}
+                onSelectRecent={(id) => setSelectedId(id)}
+                pendingName={selected ? selected.fileName : undefined}
+                pendingMessage={selected ? 'Este item foi importado mas ainda não tem um mapeamento inspecionado. Aguarde a análise; se houver erro, a mensagem aparece aqui.' : undefined}
+              />
             )}
           </div>
         </div>
@@ -569,6 +630,7 @@ function InstrumentConverterInner() {
               instrument={item.editedInstrument ?? item.instrument}
               canPersist={formatSupportsMappingEdits(item)}
               persistNote={mappingPersistNote(item)}
+              playbackSource={playbackSourceFor(item)}
               onClose={() => setMappingEditorItemId(null)}
               onSave={(edited) => {
                 setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, editedInstrument: edited } : q)));
