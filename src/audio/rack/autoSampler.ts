@@ -30,7 +30,6 @@
  */
 
 import { invoke } from '@tauri-apps/api/core';
-import { writeFile } from '@tauri-apps/plugin-fs';
 import {
   mrqBuilderAbort,
   mrqBuilderAddSample,
@@ -222,11 +221,14 @@ export async function listAudioInputDevices(): Promise<AudioInputDeviceInfo[]> {
 /** Prefixo que marca um `AudioInputDeviceInfo.id` como loopback nativo (o resto do id, depois do prefixo, é o nome do dispositivo de SAÍDA a capturar — vazio = dispositivo de saída padrão do sistema). Ver `isNativeLoopbackDeviceId`/`nativeLoopbackDeviceNameFromId`. */
 export const NATIVE_LOOPBACK_PREFIX = '__native_loopback__:';
 
+/** Id sentinela pro dispositivo de SAÍDA padrão do sistema via loopback nativo (`deviceName = undefined` no Rust, que usa `host.default_output_device()`). */
+export const NATIVE_LOOPBACK_DEFAULT_ID = NATIVE_LOOPBACK_PREFIX;
+
 export function isNativeLoopbackDeviceId(id: string): boolean {
   return id.startsWith(NATIVE_LOOPBACK_PREFIX);
 }
 
-function nativeLoopbackDeviceNameFromId(id: string): string | undefined {
+export function nativeLoopbackDeviceNameFromId(id: string): string | undefined {
   const name = id.slice(NATIVE_LOOPBACK_PREFIX.length);
   return name.length > 0 ? name : undefined;
 }
@@ -240,10 +242,38 @@ export async function isNativeLoopbackSupported(): Promise<boolean> {
   }
 }
 
-/** Lista os dispositivos de SAÍDA de áudio disponíveis pra capturar por loopback nativo — já no formato `AudioInputDeviceInfo` (id prefixado, ver `NATIVE_LOOPBACK_PREFIX`), pronto pra entrar na mesma lista/seletor dos dispositivos de entrada normais. Chame só depois de confirmar `isNativeLoopbackSupported()` — em SOs sem suporte, rejeita com a mensagem de erro de `loopback_list_devices`. */
+/** Lista os dispositivos de SAÍDA de áudio disponíveis pra capturar por loopback nativo — já no formato `AudioInputDeviceInfo` (id prefixado, ver `NATIVE_LOOPBACK_PREFIX`), incluindo no topo a opção de saída de som padrão do sistema. */
 export async function listNativeLoopbackDevices(): Promise<AudioInputDeviceInfo[]> {
   const names = await invoke<string[]>('loopback_list_devices');
-  return names.map((name) => ({ id: NATIVE_LOOPBACK_PREFIX + name, label: `${name} (loopback nativo)` }));
+  return [
+    {
+      id: NATIVE_LOOPBACK_DEFAULT_ID,
+      label: 'Saída de som do sistema — Padrão (loopback nativo)',
+    },
+    ...names.map((name) => ({ id: NATIVE_LOOPBACK_PREFIX + name, label: `${name} (loopback nativo)` })),
+  ];
+}
+
+/** Abre o Painel de Som clássico do Windows (`control.exe mmsys.cpl`) — atalho direto quando um dispositivo de saída está preso em Modo Exclusivo (`0x8889000A`). */
+export async function openWindowsSoundSettings(): Promise<void> {
+  await invoke('loopback_open_sound_settings');
+}
+
+/** Grava bytes arbitrários em disco via comando Rust (`save_binary_file`, em blocos de 4 MB), sem depender do escopo de `@tauri-apps/plugin-fs` no Windows nem estourar a serialização JSON em arquivos grandes (ex.: SoundFonts `.sf2`/`.sf3`). */
+const BINARY_WRITE_CHUNK_BYTES = 4 * 1024 * 1024;
+export async function writeBinaryFileSafe(path: string, bytes: Uint8Array): Promise<void> {
+  if (bytes.byteLength === 0) {
+    await invoke('save_binary_file', { path, data: [], append: false });
+    return;
+  }
+  for (let offset = 0; offset < bytes.byteLength; offset += BINARY_WRITE_CHUNK_BYTES) {
+    const slice = bytes.subarray(offset, Math.min(offset + BINARY_WRITE_CHUNK_BYTES, bytes.byteLength));
+    await invoke('save_binary_file', {
+      path,
+      data: Array.from(slice),
+      append: offset > 0,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,9 +471,19 @@ export class AutoSamplerSession {
   private async setupAudio(deviceId: string): Promise<void> {
     if (isNativeLoopbackDeviceId(deviceId)) {
       const deviceName = nativeLoopbackDeviceNameFromId(deviceId);
-      const info = await invoke<{ sampleRateHz: number; channels: number; deviceName: string }>('loopback_start', { deviceName });
+      const info = await invoke<{
+        sampleRateHz?: number;
+        sample_rate_hz?: number;
+        channels: number;
+        deviceName?: string;
+        device_name?: string;
+      }>('loopback_start', { deviceName });
+      const sampleRateHz = info.sampleRateHz ?? info.sample_rate_hz;
+      if (!sampleRateHz || !Number.isFinite(sampleRateHz)) {
+        throw new Error('taxa de amostragem inválida retornada pela captura de loopback.');
+      }
       this.usingNativeLoopback = true;
-      this.nativeLoopbackInfo = { sampleRateHz: info.sampleRateHz, channels: info.channels };
+      this.nativeLoopbackInfo = { sampleRateHz, channels: info.channels || 2 };
       return;
     }
     this.stream = await navigator.mediaDevices.getUserMedia({
@@ -480,14 +520,13 @@ export class AutoSamplerSession {
     if (this.usingNativeLoopback) {
       this.usingNativeLoopback = false;
       this.nativeLoopbackInfo = null;
-      // Fire-and-forget de propósito: se a sessão nativa já caiu sozinha
-      // (ex.: dispositivo desconectado no meio da captura) não há nada de
-      // útil a fazer aqui além de tentar limpar o estado do lado Rust —
-      // nunca deixa um erro de "parar" mascarar o resultado de verdade da
-      // sessão (que já terminou de capturar quando chegamos aqui).
-      invoke('loopback_stop').catch(() => {
-        /* ver comentário acima. */
-      });
+      // Desliga só a flag de gravação e limpa o buffer acumulado — mantém o
+      // stream de loopback aberto pro medidor de nível L/R ao vivo da tela do
+      // Auto Sampler continuar funcionando sem interrupção (o stream em si é
+      // encerrado por useInputLevelMeter quando o modal fecha ou troca pra
+      // uma entrada de microfone normal).
+      invoke('loopback_set_recording', { recording: false }).catch(() => {});
+      invoke('loopback_take_recorded').catch(() => {});
       return;
     }
     try {
@@ -759,6 +798,6 @@ async function buildSf2FromCaptures(
 ): Promise<string> {
   const zones = buildAutoSamplerSf2Zones(tasks, keyRanges, captured, loopPoints);
   const bytes = buildSf2Binary(zones, { instrumentName: options.instrumentName });
-  await writeFile(options.outputs.sf2!.destPath, bytes);
+  await writeBinaryFileSafe(options.outputs.sf2!.destPath, bytes);
   return options.outputs.sf2!.destPath;
 }

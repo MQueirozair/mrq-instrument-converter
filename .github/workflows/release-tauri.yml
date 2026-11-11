@@ -74,14 +74,27 @@ jobs:
           releaseBody: |
             ## Nesta versão
 
-            - Novo caminho de captura de áudio pro Auto Sampler no Windows:
-              **loopback nativo** (via WASAPI, mesma técnica do "Captura de
-              Áudio da Área de Trabalho" do OBS Studio) — grava direto o que
-              um dispositivo de SAÍDA está tocando, sem precisar instalar
-              nem rotear nenhum cabo de áudio virtual (BlackHole/VB-Audio
-              Virtual Cable). Aparece como um grupo extra "Loopback nativo
-              (sem instalar nada)" no seletor de "Dispositivo" da tela do
-              Auto Sampler.
+            - **Correção crítica no Auto Sampler (loopback nativo):** corrigido
+              o erro `invalid args 'sampleRateHz' for command
+              'mrq_builder_add_sample'` ao finalizar a gravação (`LoopbackStartInfo`
+              serializado em `camelCase`).
+            - **Medidor VU L/R ao vivo no loopback nativo:** as barras L/R não
+              somem mais ao escolher `(loopback nativo)` nem durante a gravação
+              — agora medem em tempo real o áudio que sai na saída de som do
+              sistema (inclusive com `Input Gain` aplicado).
+            - **Saída de som do sistema selecionada por padrão no Windows:** ao
+              abrir o Auto Sampler no Windows, já seleciona automaticamente
+              `Saída de som do sistema — Padrão (loopback nativo)`, sem
+              depender de microfone nem de VB-Cable.
+            - **Diagnóstico claro e reconexão automática para `0x8889000A`
+              (Modo Exclusivo):** quando o Kontakt prende a saída de som em
+              `WASAPI (Exclusive Mode)` ou `ASIO`, exibe o passo a passo exato
+              para mudar para `WASAPI (Shared Mode)`, atalho direto para o
+              Painel de Som do Windows (`mmsys.cpl`) e reconecta sozinho a
+              cada 2s.
+            - **Exportação `.sf2`/`.sf3` robusta no Windows:** gravação em
+              blocos via comando nativo (`save_binary_file`), evitando falhas
+              em bibliotecas grandes (ex.: `.npno`).
 
             **Requisitos:** macOS 10.15 (Catalina) ou mais recente, Windows
             7+, ou Linux com WebKitGTK.

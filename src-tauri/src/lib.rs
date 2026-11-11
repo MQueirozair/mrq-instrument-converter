@@ -243,7 +243,9 @@ pub fn run() {
             loopback_audio::loopback_start,
             loopback_audio::loopback_set_recording,
             loopback_audio::loopback_take_recorded,
+            loopback_audio::loopback_get_levels,
             loopback_audio::loopback_stop,
+            loopback_audio::loopback_open_sound_settings,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao rodar a aplicação Tauri");

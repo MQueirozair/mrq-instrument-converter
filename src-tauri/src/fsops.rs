@@ -93,10 +93,27 @@ fn sort_tracks(mut tracks: Vec<TrackEntry>) -> Vec<TrackEntry> {
 /// do plugin tauri-plugin-fs — o usuário já escolheu explicitamente onde
 /// salvar, em qualquer pasta/unidade do disco.
 #[tauri::command]
-pub async fn save_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
-    tokio::fs::write(&path, data)
-        .await
-        .map_err(|e| format!("falha ao salvar '{path}': {e}"))
+pub async fn save_binary_file(
+    path: String,
+    data: Vec<u8>,
+    append: Option<bool>,
+) -> Result<(), String> {
+    use tokio::io::AsyncWriteExt;
+    if append.unwrap_or(false) {
+        let mut file = tokio::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .await
+            .map_err(|e| format!("falha ao abrir '{path}' para escrita incremental: {e}"))?;
+        file.write_all(&data)
+            .await
+            .map_err(|e| format!("falha ao gravar em '{path}': {e}"))
+    } else {
+        tokio::fs::write(&path, data)
+            .await
+            .map_err(|e| format!("falha ao salvar '{path}': {e}"))
+    }
 }
 
 /// Lista os nomes (não os caminhos completos) de TODAS as entradas diretas

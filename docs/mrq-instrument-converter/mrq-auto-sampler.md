@@ -49,8 +49,16 @@ ver limitação de round robin abaixo).
    até um dispositivo de ENTRADA que apareça pra este app:
    - **macOS**: [BlackHole](https://github.com/ExistentialAudio/BlackHole)
      (gratuito).
-   - **Windows**: [VB-Audio Virtual Cable](https://vb-audio.com/Cable/)
-     (gratuito).
+   - **Windows**: não precisa instalar cabo virtual! O Auto Sampler já traz
+     **Loopback nativo (WASAPI)** embutido e seleciona por padrão
+     `Saída de som do sistema — Padrão (loopback nativo)`, que grava direto o
+     som que sai no seu fone/alto-falante com medidor VU L/R ao vivo. Basta
+     garantir que no Kontakt (**Options → Audio → Driver**) o driver esteja em
+     **`WASAPI (Shared Mode)`** (e **não** em `WASAPI (Exclusive Mode)` nem
+     `ASIO`, pois o modo exclusivo bloqueia o dispositivo no Windows com o
+     erro `0x8889000A`). Opcionalmente, também é possível usar o
+     [VB-Audio Virtual Cable](https://vb-audio.com/Cable/) se preferir rotear
+     por cabo virtual.
    - **Linux**: o "monitor" de uma sink do PulseAudio/PipeWire já serve
      como entrada de loopback (não precisa instalar nada extra na maioria
      das distros).

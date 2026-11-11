@@ -50,6 +50,8 @@ import {
   listAudioInputDevices,
   listMidiOutputs,
   listNativeLoopbackDevices,
+  NATIVE_LOOPBACK_DEFAULT_ID,
+  openWindowsSoundSettings,
   previewMidiNote,
   requestAudioInputPermission,
   SYSTEM_DEFAULT_AUDIO_INPUT_ID,
@@ -230,8 +232,13 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       }
     }
     setAudioInputs(combined);
+    const defaultId = nativeLoopbackSupported ? NATIVE_LOOPBACK_DEFAULT_ID : SYSTEM_DEFAULT_AUDIO_INPUT_ID;
     setAudioInputDeviceId((prev) =>
-      prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID || combined.some((d) => d.id === prev) ? prev : SYSTEM_DEFAULT_AUDIO_INPUT_ID
+      prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID && nativeLoopbackSupported
+        ? NATIVE_LOOPBACK_DEFAULT_ID
+        : prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID || combined.some((d) => d.id === prev)
+          ? prev
+          : defaultId
     );
     if (combined.length === 0 && !audioError) {
       setAudioError('Permissão concedida, mas nenhum dispositivo de entrada de áudio foi encontrado. Confira se o driver de loopback (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) está instalado.');
@@ -241,22 +248,29 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
 
   useEffect(() => {
     void loadMidiOutputs();
-    // A permissão de áudio NÃO é pedida automaticamente ao abrir o modal —
-    // só quando o usuário clica em "Conceder permissão de áudio" (ver botão
-    // abaixo). No WebView2 do Windows, um pedido de getUserMedia disparado
-    // automaticamente ao montar a tela pode voltar "Permission dismissed"
-    // na hora (sem mostrar prompt nenhum pro usuário), especialmente se a
-    // configuração de privacidade do Windows ainda não liberou microfone
-    // pra apps de área de trabalho — um clique explícito garante que o
-    // pedido realmente tem a chance de aparecer em primeiro plano, e dá um
-    // sinal claro de causa quando falha mesmo assim.
-    setAudioLoading(false);
-    // Checagem silenciosa (não pede permissão nenhuma, não lança erro
-    // visível) — `isNativeLoopbackSupported` já devolve `false` em qualquer
-    // SO sem suporte (ver autoSampler.ts), então só precisa decidir se a
-    // lista de dispositivos nativos entra ou não quando o usuário clicar em
-    // "Conceder permissão de áudio"/"Atualizar dispositivos de áudio".
-    void isNativeLoopbackSupported().then(setNativeLoopbackSupported);
+    // No Windows, carrega IMEDIATAMENTE os dispositivos de saída via loopback
+    // nativo (WASAPI) ao abrir o modal — eles não precisam de permissão de
+    // microfone do navegador e já gravam direto a saída de som do sistema
+    // onde o Kontakt está tocando.
+    void (async () => {
+      const supported = await isNativeLoopbackSupported();
+      setNativeLoopbackSupported(supported);
+      if (supported) {
+        try {
+          const nativeDevs = await listNativeLoopbackDevices();
+          setAudioInputs((prev) => {
+            const nonNative = prev.filter((d) => !isNativeLoopbackDeviceId(d.id));
+            return [...nativeDevs, ...nonNative];
+          });
+          setAudioInputDeviceId((prev) =>
+            prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? NATIVE_LOOPBACK_DEFAULT_ID : prev
+          );
+        } catch {
+          /* se falhar, o botão manual continua disponível abaixo */
+        }
+      }
+      setAudioLoading(false);
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -289,16 +303,20 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     void previewMidiNote(midiOutputId, midiChannel - 1, note);
   }
 
-  // Loopback nativo não passa por `getUserMedia` (ver NATIVE_LOOPBACK_PREFIX
-  // em autoSampler.ts) — o medidor ao vivo normal não tem como abrir um
-  // segundo stream pra um id que nem é um MediaDeviceInfo de verdade, então
-  // fica desligado pra essas entradas (o Input Gain continua funcionando
-  // normalmente na captura de qualquer forma).
+  // O medidor VU L/R ao vivo funciona tanto para entradas getUserMedia quanto
+  // para o loopback nativo (ver useInputLevelMeter.ts) — nunca some da tela.
+  // No loopback nativo ele compartilha a mesma sessão Rust e continua medindo
+  // inclusive durante a captura (`running === true`).
   const usingNativeLoopbackUi = isNativeLoopbackDeviceId(audioInputDeviceId);
-  const levelMeterEnabled = !running && audioInputDeviceId !== '' && !usingNativeLoopbackUi;
-  const { levels: meterLevels, error: meterError } = useInputLevelMeter(audioInputDeviceId, levelMeterEnabled, inputGainDb);
+  const levelMeterEnabled = audioInputDeviceId !== '' && (usingNativeLoopbackUi || !running);
+  const { levels: meterLevels, error: meterError, retryNow: retryMeter } = useInputLevelMeter(
+    audioInputDeviceId,
+    levelMeterEnabled,
+    inputGainDb
+  );
 
   const loadingDevices = midiLoading || audioLoading;
+  const hasMicDevicesListed = audioInputs.some((d) => !isNativeLoopbackDeviceId(d.id));
   const audioPermissionRequested = audioInputs.length > 0 || audioError !== null;
 
   const config: AutoSamplerConfig = useMemo(
@@ -641,28 +659,30 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
             </section>
 
             <section className="as-section">
-              <h4><Mic size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Entrada de áudio (do Kontakt, via loopback)</h4>
-              {!audioPermissionRequested && !audioLoading && (
+              <h4><Mic size={13} style={{ verticalAlign: -2, marginRight: 4 }} />Captura de áudio (saída do Kontakt / loopback)</h4>
+              {!hasMicDevicesListed && !audioLoading && (
                 <div className="hint" style={{ marginBottom: 6 }}>
-                  Clique abaixo pra pedir permissão de microfone/entrada de áudio ao sistema e listar os dispositivos disponíveis.
-                  {nativeLoopbackSupported && ' As opções "(loopback nativo)" não precisam de cabo de áudio virtual nenhum (BlackHole/VB-Audio Virtual Cable) — gravam direto do dispositivo de saída escolhido.'}
+                  {nativeLoopbackSupported
+                    ? 'As opções "(loopback nativo)" já estão prontas abaixo e gravam direto da saída de som do sistema onde o Kontakt está tocando (não usam microfone nem precisam de VB-Cable). Se quiser listar também entradas de microfone/cabo virtual, clique no botão abaixo.'
+                    : 'Clique abaixo pra pedir permissão de entrada de áudio ao sistema e listar os dispositivos disponíveis.'}
                 </div>
               )}
               <div className="field-row">
                 <div className="label">Dispositivo</div>
                 <select value={audioInputDeviceId} onChange={(e) => setAudioInputDeviceId(e.target.value)} disabled={running || audioLoading}>
-                  {/* "Padrão do sistema" sempre disponível (não depende de enumerateDevices ter achado nada com label) — ver SYSTEM_DEFAULT_AUDIO_INPUT_ID em autoSampler.ts e o mesmo padrão já usado no seletor de saída em SettingsModal.tsx. */}
-                  <option value={SYSTEM_DEFAULT_AUDIO_INPUT_ID}>Padrão do sistema</option>
-                  {audioInputs.filter((d) => !isNativeLoopbackDeviceId(d.id)).map((d) => (
-                    <option key={d.id} value={d.id}>{d.label}</option>
-                  ))}
                   {audioInputs.some((d) => isNativeLoopbackDeviceId(d.id)) && (
-                    <optgroup label="Loopback nativo (sem instalar nada)">
+                    <optgroup label="Saída de som do sistema — Loopback nativo (grava o que sai no PC)">
                       {audioInputs.filter((d) => isNativeLoopbackDeviceId(d.id)).map((d) => (
                         <option key={d.id} value={d.id}>{d.label}</option>
                       ))}
                     </optgroup>
                   )}
+                  <optgroup label="Entradas de microfone / cabo virtual (getUserMedia)">
+                    <option value={SYSTEM_DEFAULT_AUDIO_INPUT_ID}>Microfone / Entrada padrão do sistema</option>
+                    {audioInputs.filter((d) => !isNativeLoopbackDeviceId(d.id)).map((d) => (
+                      <option key={d.id} value={d.id}>{d.label}</option>
+                    ))}
+                  </optgroup>
                 </select>
               </div>
               <div className="field-row">
@@ -670,20 +690,33 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                 <input type="range" min={-24} max={24} step={0.5} value={inputGainDb} disabled={running} onChange={(e) => setInputGainDb(Number(e.target.value))} />
                 <div className="hint" style={{ minWidth: 48, textAlign: 'right' }}>{inputGainDb > 0 ? '+' : ''}{inputGainDb.toFixed(1)}dB</div>
               </div>
-              {usingNativeLoopbackUi ? (
-                <div className="hint" style={{ marginTop: 4 }}>
-                  Medidor ao vivo não disponível pro loopback nativo (o Input Gain continua funcionando normalmente na captura) — toque uma nota no Kontakt e confira pelo "Voices" dele que está soando.
-                </div>
-              ) : (
-                audioInputDeviceId && !running && (
-                  <div className="as-level-meters">
-                    <LevelMeterBar label="L" db={meterLevels.l} />
-                    <LevelMeterBar label="R" db={meterLevels.r} />
+              <div className="as-level-meters">
+                <LevelMeterBar label="L" db={meterLevels.l} />
+                <LevelMeterBar label="R" db={meterLevels.r} />
+              </div>
+              {meterError && (
+                <div className="as-device-error" style={{ marginTop: 6 }}>
+                  <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <div>{meterError}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>
+                      <button type="button" className="btn ghost small" onClick={retryMeter}>
+                        Testar novamente agora
+                      </button>
+                      {nativeLoopbackSupported && (
+                        <button
+                          type="button"
+                          className="btn ghost small"
+                          onClick={() => {
+                            void openWindowsSoundSettings().catch(() => {});
+                          }}
+                        >
+                          Abrir Painel de Som do Windows (mmsys.cpl)
+                        </button>
+                      )}
+                    </div>
                   </div>
-                )
-              )}
-              {meterError && !usingNativeLoopbackUi && (
-                <div className="hint" style={{ color: '#e0b84a' }}>{meterError} (o Input Gain ainda funciona normalmente na captura — só o medidor ao vivo não abriu.)</div>
+                </div>
               )}
               {audioError && (
                 <div className="as-device-error">
@@ -691,9 +724,15 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                   <div>{audioError}</div>
                 </div>
               )}
-              <button className={`btn ${audioPermissionRequested ? 'ghost' : 'primary'} small`} onClick={() => void loadAudioInputs()} disabled={running || audioLoading} style={{ marginTop: 6 }}>
+              <button className={`btn ${hasMicDevicesListed || nativeLoopbackSupported ? 'ghost' : 'primary'} small`} onClick={() => void loadAudioInputs()} disabled={running || audioLoading} style={{ marginTop: 6 }}>
                 {audioLoading ? <Loader2 size={12} className="mrq-spin" /> : null}{' '}
-                {!audioPermissionRequested ? 'Conceder permissão de áudio' : audioError ? 'Tentar de novo' : 'Atualizar dispositivos de áudio'}
+                {!hasMicDevicesListed
+                  ? nativeLoopbackSupported
+                    ? 'Listar também microfones / cabos virtuais (VB-Cable)'
+                    : 'Conceder permissão de áudio'
+                  : audioError
+                    ? 'Tentar de novo'
+                    : 'Atualizar dispositivos de áudio'}
               </button>
             </section>
           </div>

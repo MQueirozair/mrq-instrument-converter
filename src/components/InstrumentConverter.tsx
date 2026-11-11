@@ -36,7 +36,7 @@
  */
 import { useMemo, useRef, useState } from 'react';
 import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
-import { writeFile } from '@tauri-apps/plugin-fs';
+import { writeBinaryFileSafe } from '../audio/rack/autoSampler';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -164,11 +164,29 @@ function makeId(): string {
   return `qi-${Date.now().toString(36)}-${idCounter}`;
 }
 
+function formatConverterErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  if (err && typeof err === 'object') {
+    const rec = err as Record<string, unknown>;
+    if (typeof rec.message === 'string' && rec.message.length > 0) {
+      return typeof rec.kind === 'string' ? `${rec.kind}: ${rec.message}` : rec.message;
+    }
+    try {
+      return JSON.stringify(err);
+    } catch {
+      /* fallback below */
+    }
+  }
+  return String(err);
+}
+
 function logConverterError(context: string, err: unknown) {
-  const e = err instanceof Error ? err : new Error(String(err));
-  console.error(`[InstrumentConverter] ${context}:`, e);
+  const msg = formatConverterErrorMessage(err);
+  const stack = err instanceof Error ? err.stack : undefined;
+  console.error(`[InstrumentConverter] ${context}:`, err);
   try {
-    void window.api?.log?.append?.(`[InstrumentConverter] ${context}: ${e.name}: ${e.message}\n${e.stack ?? ''}`);
+    void window.api?.log?.append?.(`[InstrumentConverter] ${context}: ${msg}${stack ? `\n${stack}` : ''}`);
   } catch {
     /* noop */
   }
@@ -308,7 +326,7 @@ function InstrumentConverterInner() {
       );
     } catch (err) {
       logConverterError(`falha ao inspecionar "${path}" (formato=${format})`, err);
-      const e = err instanceof Error ? err.message : String(err);
+      const e = formatConverterErrorMessage(err);
       setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status: 'inspect-error', error: e, libraryRoot } : q)));
     }
   }
@@ -380,7 +398,7 @@ function InstrumentConverterInner() {
       pushToast(`"${item.fileName}" convertido com sucesso.`);
     } catch (err) {
       logConverterError(`falha ao converter "${item.path}" (formato=${item.format})`, err);
-      const e = err instanceof Error ? err.message : String(err);
+      const e = formatConverterErrorMessage(err);
       setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: 'convert-error', error: e } : q)));
       pushToast(`Falha ao converter "${item.fileName}": ${e}`, 'error');
     }
@@ -421,11 +439,11 @@ function InstrumentConverterInner() {
     setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: ext } : q)));
     try {
       const bytes = await buildSf2FromMrqInstrument(item.convertedPath, instrument);
-      await writeFile(destPath, bytes);
+      await writeBinaryFileSafe(destPath, bytes);
       pushToast(`"${basenameOf(destPath)}" exportado com sucesso.`);
     } catch (err) {
       logConverterError(`falha ao exportar ${ext.toUpperCase()} de "${item.fileName}"`, err);
-      const e = err instanceof Error ? err.message : String(err);
+      const e = formatConverterErrorMessage(err);
       pushToast(`Falha ao exportar ${ext.toUpperCase()}: ${e}`, 'error');
     } finally {
       setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: undefined } : q)));

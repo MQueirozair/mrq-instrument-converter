@@ -8,23 +8,19 @@
 //! src/audio/rack/autoSampler.ts e docs/mrq-instrument-converter/mrq-auto-sampler.md).
 //!
 //! Só funciona se o programa que toca o som estiver usando WASAPI
-//! (compartilhado) — ou MME/DirectSound, que no Windows acabam passando
-//! pelo mesmo "mixer" do sistema — apontando pro MESMO dispositivo de
-//! saída escolhido aqui. NÃO funciona se ele estiver em modo ASIO
-//! puro/exclusivo direto numa interface de áudio dedicada, porque nesse
-//! caso o áudio nunca passa pelo mixer do Windows (não tem o que
-//! "escutar" por fora) — nesse cenário ainda é preciso usar o cabo de
-//! áudio virtual (ver doc acima).
+//! (compartilhado — `WASAPI (Shared Mode)`) — ou MME/DirectSound, que no
+//! Windows acabam passando pelo mesmo "mixer" do sistema — apontando pro
+//! MESMO dispositivo de saída escolhido aqui. NÃO funciona se ele estiver
+//! em modo exclusivo (`WASAPI (Exclusive Mode)` ou `ASIO`/`ASIO4ALL`),
+//! porque nesse caso o dispositivo fica bloqueado para qualquer outro
+//! cliente WASAPI (erro `0x8889000A` — `AUDCLNT_E_DEVICE_IN_USE`) e o
+//! áudio nunca passa pelo mixer do Windows.
 //!
 //! Técnica: no backend WASAPI do `cpal`, construir um *input stream* a
 //! partir de um dispositivo de SAÍDA liga automaticamente a flag
 //! `AUDCLNT_STREAMFLAGS_LOOPBACK` da API do Windows — a mesma técnica
 //! usada pelo OBS Studio ("Captura de Áudio da Área de Trabalho") e pelo
-//! Audacity (host "Windows WASAPI" + dispositivo "(loopback)"). Isso
-//! PRECISA ser nativo (Rust) porque o `MediaStream`/`getUserMedia` do
-//! WebView não expõe loopback de saída por padrão — por design, uma
-//! página comum não deveria conseguir gravar "o que está tocando nas
-//! caixas de som" sem uma API explícita de sistema operacional pra isso.
+//! Audacity (host "Windows WASAPI" + dispositivo "(loopback)").
 
 #[cfg(target_os = "windows")]
 mod imp {
@@ -34,25 +30,84 @@ mod imp {
     use std::sync::mpsc;
     use std::sync::{Arc, Mutex};
     use std::thread::JoinHandle;
+    use std::time::{Duration, Instant};
 
-    #[derive(Serialize)]
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct LoopbackStartInfo {
         pub sample_rate_hz: u32,
         pub channels: u16,
         pub device_name: String,
     }
 
+    #[derive(Clone, Copy, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LoopbackLevels {
+        pub rms_l: f32,
+        pub rms_r: f32,
+    }
+
+    fn compute_stereo_rms<T, F>(data: &[T], channels: usize, mut to_f32: F) -> (f32, f32)
+    where
+        F: FnMut(&T) -> f32,
+    {
+        if data.is_empty() || channels == 0 {
+            return (0.0, 0.0);
+        }
+        let frames = data.len() / channels;
+        if frames == 0 {
+            return (0.0, 0.0);
+        }
+        let mut sum_l = 0.0f64;
+        let mut sum_r = 0.0f64;
+        if channels == 1 {
+            for s in data.iter().take(frames) {
+                let v = to_f32(s) as f64;
+                sum_l += v * v;
+            }
+            let rms = (sum_l / frames as f64).sqrt() as f32;
+            (rms, rms)
+        } else {
+            for frame in data.chunks_exact(channels) {
+                let l = to_f32(&frame[0]) as f64;
+                let r = to_f32(&frame[1]) as f64;
+                sum_l += l * l;
+                sum_r += r * r;
+            }
+            let rms_l = (sum_l / frames as f64).sqrt() as f32;
+            let rms_r = (sum_r / frames as f64).sqrt() as f32;
+            (rms_l, rms_r)
+        }
+    }
+
+    fn format_open_error(found_name: &str, err: impl std::fmt::Display) -> String {
+        let raw = err.to_string();
+        if raw.to_ascii_lowercase().contains("0x8889000a") {
+            format!(
+                "o dispositivo de saída \"{found_name}\" está bloqueado em Modo Exclusivo por outro programa (erro WASAPI 0x8889000A — AUDCLNT_E_DEVICE_IN_USE). \
+No Kontakt, abra Options (ícone de engrenagem) > Audio e mude o Driver de \"WASAPI (Exclusive Mode)\" ou \"ASIO\" para \"WASAPI (Shared Mode)\" \
+(ou clique em \"Abrir Painel de Som do Windows\" abaixo, dê dois cliques em \"{found_name}\" na aba Reprodução > aba Avançado e desmarque \"Permitir que aplicativos assumam o controle exclusivo deste dispositivo\")."
+            )
+        } else {
+            format!("não foi possível abrir a captura de loopback em \"{found_name}\": {raw}")
+        }
+    }
+
     /// Mantém viva a thread dedicada que possui o `cpal::Stream` (o stream
-    /// em si nunca atravessa threads — só o buffer e a flag de
-    /// "gravando agora" são compartilhados, via `Arc`). Ao ser derrubada
-    /// (`Drop`), avisa a thread pra desligar e espera ela terminar —
-    /// garante que a captura sempre para de verdade, mesmo se o chamador
-    /// esquecer de parar explicitamente.
+    /// em si nunca atravessa threads — só o buffer, o medidor de nível L/R
+    /// e a flag de "gravando agora" são compartilhados, via `Arc`). Ao ser
+    /// derrubada (`Drop`), avisa a thread pra desligar e espera ela
+    /// terminar — garante que a captura sempre para de verdade, mesmo se o
+    /// chamador esquecer de parar explicitamente.
     pub struct LoopbackSession {
         shutdown_tx: mpsc::Sender<()>,
         join_handle: Option<JoinHandle<()>>,
         buffer: Arc<Mutex<Vec<f32>>>,
         recording: Arc<AtomicBool>,
+        levels: Arc<Mutex<(f32, f32, Option<Instant>)>>,
+        alive: Arc<AtomicBool>,
+        requested_device: Option<String>,
+        info: LoopbackStartInfo,
     }
 
     impl Drop for LoopbackSession {
@@ -70,16 +125,51 @@ mod imp {
         }
 
         /// Esvazia e devolve tudo que foi capturado desde a última chamada
-        /// (ou desde o início, na primeira vez) — mesmo padrão de
-        /// "começar a gravar / parar / pegar o que gravou" já usado em
-        /// `AutoSamplerSession.captureOneTask` (ver autoSampler.ts), só
-        /// que aqui o buffer vive no lado nativo em vez de um
-        /// `ScriptProcessorNode`.
+        /// (ou desde o início, na primeira vez).
         pub fn take_recorded(&self) -> Vec<f32> {
             match self.buffer.lock() {
                 Ok(mut buf) => std::mem::take(&mut *buf),
                 Err(_) => Vec::new(),
             }
+        }
+
+        /// Devolve o nível RMS L/R mais recente medido pelo callback de
+        /// loopback. Como o WASAPI loopback só dispara o callback enquanto
+        /// existe áudio sendo renderizado no dispositivo de saída, qualquer
+        /// leitura com mais de 200ms sem pacote novo é tratada como silêncio
+        /// (`0.0`), evitando que a barra VU congele no último valor quando o
+        /// som para.
+        pub fn get_levels(&self) -> LoopbackLevels {
+            match self.levels.lock() {
+                Ok(guard) => {
+                    let (rms_l, rms_r, updated_at) = *guard;
+                    match updated_at {
+                        Some(t) if t.elapsed() <= Duration::from_millis(200) => {
+                            LoopbackLevels { rms_l, rms_r }
+                        }
+                        _ => LoopbackLevels {
+                            rms_l: 0.0,
+                            rms_r: 0.0,
+                        },
+                    }
+                }
+                Err(_) => LoopbackLevels {
+                    rms_l: 0.0,
+                    rms_r: 0.0,
+                },
+            }
+        }
+
+        pub fn is_alive(&self) -> bool {
+            self.alive.load(Ordering::Relaxed)
+        }
+
+        pub fn requested_device(&self) -> &Option<String> {
+            &self.requested_device
+        }
+
+        pub fn info(&self) -> &LoopbackStartInfo {
+            &self.info
         }
     }
 
@@ -100,16 +190,21 @@ mod imp {
         let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
         let buffer: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
         let recording = Arc::new(AtomicBool::new(false));
+        let levels: Arc<Mutex<(f32, f32, Option<Instant>)>> = Arc::new(Mutex::new((0.0, 0.0, None)));
+        let alive = Arc::new(AtomicBool::new(false));
 
         let buffer_thread = Arc::clone(&buffer);
         let recording_thread = Arc::clone(&recording);
+        let levels_thread = Arc::clone(&levels);
+        let alive_thread = Arc::clone(&alive);
+        let requested_for_thread = device_name.clone();
 
         let join_handle = std::thread::Builder::new()
             .name("mrq-loopback-capture".into())
             .spawn(move || {
                 let built = (|| -> Result<(cpal::Stream, u32, u16, String), String> {
                     let host = cpal::default_host();
-                    let device = match &device_name {
+                    let device = match &requested_for_thread {
                         Some(name) => host
                             .output_devices()
                             .map_err(|e| e.to_string())?
@@ -125,14 +220,17 @@ mod imp {
                     };
                     let found_name = device.name().unwrap_or_else(|_| "dispositivo desconhecido".to_string());
                     let supported = device.default_output_config().map_err(|e| {
-                        format!("não foi possível ler o formato de áudio do dispositivo \"{found_name}\": {e}")
+                        format_open_error(&found_name, e)
                     })?;
                     let sample_format = supported.sample_format();
                     let config: cpal::StreamConfig = supported.config();
                     let sample_rate_hz = config.sample_rate.0;
                     let channels = config.channels;
+                    let ch_usize = (channels as usize).max(1);
 
-                    let err_fn = |err: cpal::StreamError| {
+                    let alive_err = Arc::clone(&alive_thread);
+                    let err_fn = move |err: cpal::StreamError| {
+                        alive_err.store(false, Ordering::Relaxed);
                         eprintln!("[mrq-loopback] erro no stream de captura: {err}");
                     };
 
@@ -140,9 +238,14 @@ mod imp {
                         cpal::SampleFormat::F32 => {
                             let buf_cb = Arc::clone(&buffer_thread);
                             let rec_cb = Arc::clone(&recording_thread);
+                            let lvl_cb = Arc::clone(&levels_thread);
                             device.build_input_stream(
                                 &config,
                                 move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                                    let (rms_l, rms_r) = compute_stereo_rms(data, ch_usize, |s| *s);
+                                    if let Ok(mut lv) = lvl_cb.lock() {
+                                        *lv = (rms_l, rms_r, Some(Instant::now()));
+                                    }
                                     if rec_cb.load(Ordering::Relaxed) {
                                         if let Ok(mut buf) = buf_cb.lock() {
                                             buf.extend_from_slice(data);
@@ -156,9 +259,15 @@ mod imp {
                         cpal::SampleFormat::I16 => {
                             let buf_cb = Arc::clone(&buffer_thread);
                             let rec_cb = Arc::clone(&recording_thread);
+                            let lvl_cb = Arc::clone(&levels_thread);
                             device.build_input_stream(
                                 &config,
                                 move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                                    let (rms_l, rms_r) =
+                                        compute_stereo_rms(data, ch_usize, |s| *s as f32 / i16::MAX as f32);
+                                    if let Ok(mut lv) = lvl_cb.lock() {
+                                        *lv = (rms_l, rms_r, Some(Instant::now()));
+                                    }
                                     if rec_cb.load(Ordering::Relaxed) {
                                         if let Ok(mut buf) = buf_cb.lock() {
                                             buf.extend(data.iter().map(|s| *s as f32 / i16::MAX as f32));
@@ -172,9 +281,16 @@ mod imp {
                         cpal::SampleFormat::U16 => {
                             let buf_cb = Arc::clone(&buffer_thread);
                             let rec_cb = Arc::clone(&recording_thread);
+                            let lvl_cb = Arc::clone(&levels_thread);
                             device.build_input_stream(
                                 &config,
                                 move |data: &[u16], _: &cpal::InputCallbackInfo| {
+                                    let (rms_l, rms_r) = compute_stereo_rms(data, ch_usize, |s| {
+                                        (*s as f32 / u16::MAX as f32) * 2.0 - 1.0
+                                    });
+                                    if let Ok(mut lv) = lvl_cb.lock() {
+                                        *lv = (rms_l, rms_r, Some(Instant::now()));
+                                    }
                                     if rec_cb.load(Ordering::Relaxed) {
                                         if let Ok(mut buf) = buf_cb.lock() {
                                             buf.extend(data.iter().map(|s| (*s as f32 / u16::MAX as f32) * 2.0 - 1.0));
@@ -191,27 +307,27 @@ mod imp {
                             ))
                         }
                     }
-                    .map_err(|e| format!("não foi possível abrir a captura de loopback em \"{found_name}\": {e}"))?;
+                    .map_err(|e| format_open_error(&found_name, e))?;
 
                     stream
                         .play()
-                        .map_err(|e| format!("não foi possível iniciar a captura de loopback: {e}"))?;
+                        .map_err(|e| format_open_error(&found_name, e))?;
                     Ok((stream, sample_rate_hz, channels, found_name))
                 })();
 
                 match built {
                     Ok((stream, sample_rate_hz, channels, found_name)) => {
+                        alive_thread.store(true, Ordering::Relaxed);
                         if ready_tx.send(Ok((sample_rate_hz, channels, found_name))).is_err() {
-                            return; // chamador desistiu antes da gente responder — nada a fazer.
+                            alive_thread.store(false, Ordering::Relaxed);
+                            return;
                         }
-                        // Mantém a thread (e o stream, que não pode atravessar threads)
-                        // viva até mandarem desligar — é assim que a captura continua
-                        // rodando em segundo plano entre as chamadas de
-                        // start/set_recording/take_recorded/stop vindas do frontend.
                         let _ = shutdown_rx.recv();
+                        alive_thread.store(false, Ordering::Relaxed);
                         drop(stream);
                     }
                     Err(e) => {
+                        alive_thread.store(false, Ordering::Relaxed);
                         let _ = ready_tx.send(Err(e));
                     }
                 }
@@ -219,19 +335,26 @@ mod imp {
             .map_err(|e| format!("não foi possível iniciar a thread de captura de áudio: {e}"))?;
 
         match ready_rx.recv() {
-            Ok(Ok((sample_rate_hz, channels, device_name))) => Ok((
-                LoopbackSession {
-                    shutdown_tx,
-                    join_handle: Some(join_handle),
-                    buffer,
-                    recording,
-                },
-                LoopbackStartInfo {
+            Ok(Ok((sample_rate_hz, channels, resolved_name))) => {
+                let info = LoopbackStartInfo {
                     sample_rate_hz,
                     channels,
-                    device_name,
-                },
-            )),
+                    device_name: resolved_name,
+                };
+                Ok((
+                    LoopbackSession {
+                        shutdown_tx,
+                        join_handle: Some(join_handle),
+                        buffer,
+                        recording,
+                        levels,
+                        alive,
+                        requested_device: device_name,
+                        info: info.clone(),
+                    },
+                    info,
+                ))
+            }
             Ok(Err(e)) => Err(e),
             Err(_) => Err("a thread de captura de áudio encerrou inesperadamente antes de responder.".to_string()),
         }
@@ -242,19 +365,45 @@ mod imp {
 mod imp {
     use serde::Serialize;
 
-    #[derive(Serialize)]
+    #[derive(Clone, Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct LoopbackStartInfo {
         pub sample_rate_hz: u32,
         pub channels: u16,
         pub device_name: String,
     }
 
-    pub struct LoopbackSession;
+    #[derive(Clone, Copy, Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct LoopbackLevels {
+        pub rms_l: f32,
+        pub rms_r: f32,
+    }
+
+    pub struct LoopbackSession {
+        requested_device: Option<String>,
+        info: LoopbackStartInfo,
+    }
 
     impl LoopbackSession {
         pub fn set_recording(&self, _recording: bool) {}
         pub fn take_recorded(&self) -> Vec<f32> {
             Vec::new()
+        }
+        pub fn get_levels(&self) -> LoopbackLevels {
+            LoopbackLevels {
+                rms_l: 0.0,
+                rms_r: 0.0,
+            }
+        }
+        pub fn is_alive(&self) -> bool {
+            false
+        }
+        pub fn requested_device(&self) -> &Option<String> {
+            &self.requested_device
+        }
+        pub fn info(&self) -> &LoopbackStartInfo {
+            &self.info
         }
     }
 
@@ -273,11 +422,12 @@ mod imp {
     }
 }
 
-pub use imp::{is_supported, list_devices, start, LoopbackSession, LoopbackStartInfo};
+pub use imp::{is_supported, list_devices, start, LoopbackLevels, LoopbackSession, LoopbackStartInfo};
 use std::sync::{Arc, Mutex};
 
-/// Estado gerenciado pelo Tauri — só uma captura de loopback por vez (não
-/// há caso de uso pra mais de uma simultânea neste app).
+/// Estado gerenciado pelo Tauri — uma sessão de loopback ativa por vez,
+/// compartilhada entre o medidor de nível L/R ao vivo e a gravação do Auto
+/// Sampler.
 pub type LoopbackState = Arc<Mutex<Option<LoopbackSession>>>;
 
 pub fn new_state() -> LoopbackState {
@@ -302,8 +452,15 @@ pub fn loopback_start(
     let mut guard = state
         .lock()
         .map_err(|_| "estado de captura de loopback corrompido.".to_string())?;
-    if guard.is_some() {
-        return Err("já existe uma captura de loopback em andamento — pare ela antes de iniciar outra.".to_string());
+    if let Some(existing) = guard.as_ref() {
+        if existing.is_alive() && existing.requested_device() == &device_name {
+            existing.set_recording(false);
+            let _ = existing.take_recorded();
+            return Ok(existing.info().clone());
+        }
+    }
+    if let Some(old) = guard.take() {
+        drop(old);
     }
     let (session, info) = start(device_name)?;
     *guard = Some(session);
@@ -336,10 +493,43 @@ pub fn loopback_take_recorded(state: tauri::State<'_, LoopbackState>) -> Result<
 }
 
 #[tauri::command]
+pub fn loopback_get_levels(state: tauri::State<'_, LoopbackState>) -> LoopbackLevels {
+    match state.lock() {
+        Ok(guard) => match guard.as_ref() {
+            Some(session) => session.get_levels(),
+            None => LoopbackLevels {
+                rms_l: 0.0,
+                rms_r: 0.0,
+            },
+        },
+        Err(_) => LoopbackLevels {
+            rms_l: 0.0,
+            rms_r: 0.0,
+        },
+    }
+}
+
+#[tauri::command]
 pub fn loopback_stop(state: tauri::State<'_, LoopbackState>) -> Result<(), String> {
     let mut guard = state
         .lock()
         .map_err(|_| "estado de captura de loopback corrompido.".to_string())?;
-    guard.take(); // dropar a sessão já desliga a thread/stream (ver impl Drop).
+    guard.take();
     Ok(())
+}
+
+#[tauri::command]
+pub fn loopback_open_sound_settings() -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("control.exe")
+            .arg("mmsys.cpl")
+            .spawn()
+            .map_err(|e| format!("não foi possível abrir o Painel de Som do Windows (mmsys.cpl): {e}"))?;
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Err("atalho do Painel de Som do Windows só está disponível no Windows.".to_string())
+    }
 }

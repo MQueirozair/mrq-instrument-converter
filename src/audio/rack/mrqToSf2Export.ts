@@ -44,13 +44,34 @@ export function mrqInstrumentHasExportableZones(instrument: MrqInstrumentModel |
  *  Amostras reaproveitadas por várias zonas (ex.: round robin apontando pro mesmo sampleId) são extraídas uma
  *  única vez e reaproveitadas — só o número de ZONAS de saída multiplica, nunca as chamadas ao backend Rust. */
 async function buildSf2PresetsFromInstrument(convertedPath: string, instrument: MrqInstrumentModel): Promise<Sf2ExportPreset[]> {
-  const sampleCache = new Map<string, MrqDecodedSample>();
-  async function decodedFor(sampleId: string): Promise<MrqDecodedSample> {
+  // Conta quantas zonas referenciam cada sampleId — amostras usadas por uma
+  // única zona (caso normal do .npno/.sf2) não precisam ficar retidas em
+  // cache depois de convertidas pra Float32Array, reduzindo pela metade o
+  // pico de memória em bibliotecas grandes (ex.: pianos Nord "Lrg").
+  const remainingRefs = new Map<string, number>();
+  for (const preset of instrument.presets) {
+    for (const group of preset.groups) {
+      for (const zone of group.zones) {
+        remainingRefs.set(zone.sampleId, (remainingRefs.get(zone.sampleId) ?? 0) + 1);
+      }
+    }
+  }
+
+  const sampleCache = new Map<string, { interleaved: Float32Array; sampleRateHz: number; channels: 1 | 2 }>();
+  async function decodedFor(sampleId: string): Promise<{ interleaved: Float32Array; sampleRateHz: number; channels: 1 | 2 }> {
+    const left = (remainingRefs.get(sampleId) ?? 1) - 1;
+    remainingRefs.set(sampleId, left);
     const cached = sampleCache.get(sampleId);
-    if (cached) return cached;
-    const decoded = await mrqExtractSample(convertedPath, sampleId);
-    sampleCache.set(sampleId, decoded);
-    return decoded;
+    if (cached) {
+      if (left <= 0) sampleCache.delete(sampleId);
+      return cached;
+    }
+    const decoded: MrqDecodedSample = await mrqExtractSample(convertedPath, sampleId);
+    const interleaved = decoded.interleaved instanceof Float32Array ? decoded.interleaved : Float32Array.from(decoded.interleaved);
+    const channels: 1 | 2 = decoded.channels >= 2 ? 2 : 1;
+    const entry = { interleaved, sampleRateHz: decoded.sampleRateHz, channels };
+    if (left > 0) sampleCache.set(sampleId, entry);
+    return entry;
   }
 
   const presets: Sf2ExportPreset[] = [];
@@ -59,8 +80,6 @@ async function buildSf2PresetsFromInstrument(convertedPath: string, instrument: 
     for (const group of preset.groups) {
       for (const zone of group.zones) {
         const decoded = await decodedFor(zone.sampleId);
-        const interleaved = decoded.interleaved instanceof Float32Array ? decoded.interleaved : Float32Array.from(decoded.interleaved);
-        const channels = decoded.channels >= 2 ? 2 : 1;
         const hasLoop = zone.loopEnabled && zone.loopStart != null && zone.loopEnd != null && zone.loopEnd > zone.loopStart;
         zones.push({
           label: zone.sampleId,
@@ -69,9 +88,9 @@ async function buildSf2PresetsFromInstrument(convertedPath: string, instrument: 
           hiKey: zone.hiKey,
           loVel: zone.loVel,
           hiVel: zone.hiVel,
-          interleaved,
+          interleaved: decoded.interleaved,
           sampleRateHz: decoded.sampleRateHz,
-          channels,
+          channels: decoded.channels,
           loopStartFrame: hasLoop ? zone.loopStart! : undefined,
           loopEndFrame: hasLoop ? zone.loopEnd! : undefined,
         });
