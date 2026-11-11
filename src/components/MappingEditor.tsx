@@ -300,6 +300,9 @@ export default function MappingEditor({
   const [splitOpen, setSplitOpen] = useState(false);
   const [splitSetKey, setSplitSetKey] = useState<string | null>(null);
   const [splitApplyAll, setSplitApplyAll] = useState(true);
+  /** Abre as divisórias automaticamente na 1ª vez que houver camadas
+   *  empilhadas, mas respeita se o usuário fechou o painel. */
+  const splitTouchedRef = useRef(false);
 
   const [midiInputs, setMidiInputs] = useState<{ id: string; name: string }[]>([]);
   const [midiInputId, setMidiInputId] = useState<string>('');
@@ -387,6 +390,15 @@ export default function MappingEditor({
     const withSelection = splitSets.find((s) => s.zones.some((z) => selectedKeys.has(z.key)));
     return withSelection?.key ?? splitSets[0]?.key ?? null;
   }, [splitSets, selectedKeys]);
+
+  useEffect(() => {
+    if (!splitTouchedRef.current && splitSets.length > 0) {
+      setSplitSetKey((k) => k ?? defaultSplitSetKey);
+      setSplitOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [splitSets.length]);
+
 
   function applySplitPatches(patches: VelocitySplitPatch[]) {
     const map = new Map<string, Partial<MrqZone>>();
@@ -594,6 +606,7 @@ export default function MappingEditor({
     setMenuOpen(false);
     if (id === 'vel-split') {
       if (splitSets.length === 0) { notify('Este instrumento não tem 2+ amostras na mesma faixa de teclas para dividir por velocity.'); return; }
+      splitTouchedRef.current = true;
       setSplitSetKey(defaultSplitSetKey);
       setSplitOpen(true);
       return;
@@ -1022,8 +1035,9 @@ export default function MappingEditor({
           <ToolButton
             active={splitOpen}
             onClick={() => {
-              if (splitOpen) setSplitOpen(false);
-              else { setSplitSetKey(defaultSplitSetKey); setSplitOpen(true); }
+      splitTouchedRef.current = true;
+      if (splitOpen) setSplitOpen(false);
+      else { setSplitSetKey(defaultSplitSetKey); setSplitOpen(true); }
             }}
             title="Divisórias de Velocity — arraste com o mouse para posicionar cada amostra entre 0 e 127"
             icon={<AlignVerticalDistributeCenter size={13} />}
@@ -1101,12 +1115,12 @@ export default function MappingEditor({
             onApply={applySplitPatches}
             onSelectZone={(k) => selectZones([k])}
             onOpenWave={(k) => { setWaveZoneKey(k); notify('Forma de onda aberta abaixo.'); }}
-            onClose={() => setSplitOpen(false)}
+            onClose={() => { splitTouchedRef.current = true; setSplitOpen(false); }}
           />
         ) : (
           <div className="vse-empty">
             <Info size={13} /> Nenhum conjunto com 2+ amostras na mesma faixa de teclas. As divisórias de velocity aparecem quando há camadas empilhadas (ex.: piano com várias dinâmicas por nota).
-            <button className="zm-close" onClick={() => setSplitOpen(false)}><X size={14} /></button>
+            <button className="zm-close" onClick={() => { splitTouchedRef.current = true; setSplitOpen(false); }}><X size={14} /></button>
           </div>
         ))}
 

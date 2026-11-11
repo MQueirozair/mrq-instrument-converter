@@ -865,7 +865,8 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                   <VelocityBreakpointEditor
                     layers={velocityLayers}
                     breakpoints={velocityBreakpoints}
-                    editable={velocityResponse === 'custom'}
+                    editable={!running}
+                    custom={velocityResponse === 'custom'}
                     onDrag={handleDragVelocityBreakpoints}
                   />
                   <div className="field-row">

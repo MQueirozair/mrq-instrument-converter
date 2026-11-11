@@ -114,10 +114,17 @@ L/R):
      antes de começar.
 3. **Som** — camadas de velocity, round robin, sustain/release, one-shot e
    auto loop (os mesmos campos do Auto Sampler do Logic Pro).
-   - **Velocity Response "Custom"**: com mais de 1 camada de velocity,
-     aparece um gráfico com uma divisória arrastável entre cada camada —
-     arrastar qualquer uma troca automaticamente a resposta pra "Custom" e
-     passa a usar esses pontos exatos (em vez de uma curva linear/exp/log).
+   - **Velocity Response / divisórias arrastáveis (v0.2.14)**: com mais de
+     1 camada de velocity aparece a barra azul com as linhas brancas entre
+     as faixas (a tela da foto). **Clique e arraste qualquer linha branca
+     para posicionar a região de velocity com o mouse** — funciona em
+     QUALQUER preset (linear/exp/log), não só em "Custom": o primeiro
+     arraste troca automaticamente a resposta pra "Custom" e passa a usar
+     esses pontos exatos. As pontas 0 e 127 são fixas; as divisórias do
+     meio nunca cruzam as vizinhas. A área clicável é generosa (18 px) e
+     também dá pra clicar **dentro** de uma faixa, perto da linha, e
+     arrastar — não precisa acertar os 2 px da linha. Os números acima de
+     cada linha mostram o valor MIDI exato (ex.: 42 / 85 / 127).
 4. **Captura** — nome do instrumento e formatos de saída (`.mrq` e/ou
    SF2/SF3, marcados por padrão). Clique "Iniciar captura": o app toca e
    grava cada nota automaticamente, com barra de progresso e a nota atual

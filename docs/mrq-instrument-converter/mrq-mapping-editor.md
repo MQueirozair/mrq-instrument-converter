@@ -279,3 +279,46 @@ repetir o valor de fronteira dentro de duas zonas ao mesmo tempo. Áreas
 - `scripts/test-velocity-split.mjs` — 14 testes de regressão, incluindo o
   exemplo `10/48/81`, arrastes com clamp, distribuição igual, esticar pontas
   e replicação em vários conjuntos. Rode com `npm run test:velocity-split`.
+
+---
+
+## 6. v0.2.14 — "clicar aqui e mover as linhas da região"
+
+A foto seguinte (`image-47.png`) é a barra **Velocity Response do Auto
+Sampler** (faixas azuis 1/2/3 com linhas brancas). O usuário queria clicar
+ali e mover as linhas com o mouse — e não conseguia.
+
+**Causa real:** `VelocityBreakpointEditor.handlePointerDown` começava com
+`if (!editable ...) return`, e `AutoSamplerDialog` passava
+`editable={velocityResponse === 'custom'}`. Ou seja, no preset padrão
+(linear) as divisórias eram **somente leitura** — o texto de ajuda até
+dizia "arraste uma divisória pra trocar automaticamente pra Custom", mas o
+código bloqueava o arraste. Contradição entre UI e comportamento.
+
+**Correção:**
+
+- `editable` agora significa "pode arrastar" (falso só durante a captura).
+  O primeiro arraste entrega os novos pontos a
+  `handleDragVelocityBreakpoints`, que já trocava pra `custom` e guardava
+  `customVelocityBreakpoints` — o motor `computeVelocityBreakpoints` já
+  consumia esse array, só faltava liberar o gesto.
+- Alça clicável de **18 px** (antes 10), com "puxador" branco visível no
+  meio da linha, cursor `ew-resize`, destaque amarelo durante o arraste e
+  número do valor MIDI acima de cada linha.
+- Dá para clicar **dentro** de uma faixa, perto da linha (tolerância de 8
+  unidades MIDI), e pegar a divisória — `nearestDraggableDivider`.
+- Ponteiro capturado no SVG inteiro (`setPointerCapture`), então o arraste
+  não se perde ao sair da alça; funciona com mouse e touch
+  (`touch-action: none`).
+- Lógica pura extraída em `src/audio/rack/velocityBreakpointDrag.ts`
+  (`moveBreakpoint`, `nearestDraggableDivider`, `clientXToVelocity`) com
+  **10 testes** em `scripts/test-velocity-breakpoint-drag.mjs`
+  (`npm run test:velocity-breakpoint-drag`), incluindo "arrastar num preset
+  linear gera pontos customizados válidos".
+
+**No Editor de Mapeamento**, a mesma ideia foi aplicada à barra de
+divisórias de velocity da §5: clicar dentro de uma parte, a até 4 unidades
+de uma divisória, agora move a **linha** (não a camada inteira). Além disso
+o painel de divisórias **abre automaticamente** quando o instrumento tem
+camadas empilhadas (respeitando se o usuário o fechou), para a barra estar
+visível no lugar esperado sem precisar procurar o botão.

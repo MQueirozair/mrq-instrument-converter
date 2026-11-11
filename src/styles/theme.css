@@ -2023,3 +2023,13 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .vse-note { width: 100%; display: flex; align-items: flex-start; gap: 6px; color: #8b929b; font-size: 9.5px; line-height: 1.5; border-top: 1px solid #2c3138; padding-top: 6px; }
 .vse-note svg { flex-shrink: 0; margin-top: 1px; color: #6aa7de; }
 .vse-note b { color: #c6cbd2; }
+
+/* ==========================================================================
+   v0.2.14 — divisórias do "Velocity Response" do Auto Sampler agora
+   arrastáveis em qualquer preset (alça maior + clique perto da linha).
+   ========================================================================== */
+.as-velocity-editor .hint { font-size: 10.5px; color: var(--text-2); line-height: 1.5; margin-top: 5px; }
+.as-velocity-editor svg { display: block; }
+.as-vel-handle:hover { fill: rgba(255, 226, 122, .18); stroke: #ffe27a; stroke-width: 1; rx: 3; }
+.as-velocity-editor.dragging svg { cursor: ew-resize; }
+.as-vel-breakpoint-label.active { fill: #ffe27a; font-weight: 700; }

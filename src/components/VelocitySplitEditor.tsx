@@ -227,7 +227,22 @@ export default function VelocitySplitEditor({
               className={`vse-seg ${sel ? 'sel' : ''}`}
               style={{ left: pct(lo), width: pct(Math.max(1, hiExclusive - lo)), background: LAYER_COLORS[i % LAYER_COLORS.length] }}
               title={`Parte ${i + 1}: ${z.sampleId}\nVelocity ${lo}–${hiExclusive - 1}\nArraste o corpo para mover a camada · duplo clique abre a onda`}
-              onPointerDown={(e) => { onSelectZone(z.key); beginDrag(e, 'seg', i); }}
+              onPointerDown={(e) => {
+                onSelectZone(z.key);
+                // Clicou perto de uma divisória (mesmo dentro da faixa)?
+                // pega a DIVISÓRIA em vez de mover a camada inteira —
+                // facilita "clicar aqui e mover a linha da região".
+                const rect = trackRef.current?.getBoundingClientRect();
+                const vel = rect && rect.width > 0 ? ((e.clientX - rect.left) / rect.width) * 128 : 0;
+                let near: number | null = null;
+                let best = Infinity;
+                for (let j = 1; j < n; j += 1) {
+                  const d = Math.abs(edges[j] - vel);
+                  if (d < best) { best = d; near = j; }
+                }
+                if (near !== null && best <= 4) beginDrag(e, 'div', near);
+                else beginDrag(e, 'seg', i);
+              }}
               onDoubleClick={(e) => { e.stopPropagation(); onOpenWave(z.key); }}
             >
               <span className="vse-seg-num">{i + 1}</span>
