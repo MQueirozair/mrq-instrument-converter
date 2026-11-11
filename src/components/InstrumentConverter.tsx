@@ -613,9 +613,14 @@ function InstrumentConverterInner() {
       {captureDialogOpen && (
         <KontaktCaptureDialog onClose={() => setCaptureDialogOpen(false)} onImported={handleCaptureImported} />
       )}
-      {autoSamplerDialogOpen && (
-        <AutoSamplerDialog onClose={() => setAutoSamplerDialogOpen(false)} onImported={handleAutoSamplerImported} />
-      )}
+      {/* Mantém o Auto Sampler MONTADO: `open` só esconde/exibe o overlay.
+          Fechar/reabrir preserva ajustes, dispositivos e permissões; o
+          rascunho em localStorage cobre também trocar de tela/reiniciar. */}
+      <AutoSamplerDialog
+        open={autoSamplerDialogOpen}
+        onClose={() => setAutoSamplerDialogOpen(false)}
+        onImported={handleAutoSamplerImported}
+      />
       {midiControllerDialogOpen && (
         <MidiControllerDialog onClose={() => setMidiControllerDialogOpen(false)} />
       )}

@@ -322,3 +322,22 @@ de uma divisória, agora move a **linha** (não a camada inteira). Além disso
 o painel de divisórias **abre automaticamente** quando o instrumento tem
 camadas empilhadas (respeitando se o usuário o fechou), para a barra estar
 visível no lugar esperado sem precisar procurar o botão.
+
+## 7. v0.2.15 — manual ilustrado na Ajuda e imagens locais
+
+A Ajuda do app ganhou `HelpAdvancedGuide.tsx`, com explicações passo a passo
+e figuras locais para os recursos que antes estavam descritos só em texto:
+tela inicial 1-2-3 do Conversor, exportação `.sf2`/`.sf3`, grade key ×
+velocity, divisão exata `10 / 48 / 81`, arestas `[0,10,48,81,128]` e faixas
+`0–9 / 10–47 / 48–80 / 81–127`, arraste das linhas brancas da Response,
+pré-escuta com controlador USB MIDI, Auto Sampler em 4 etapas e tabela de
+problemas comuns. As imagens ficam em `public/help/help-*.svg` e
+`help-auto-sampler-tela-real.png`; o gerador versionado é
+`scripts/generate-help-illustrations.py`. Nenhuma figura depende de rede ou
+recurso externo, atendendo também ao preview sandboxed.
+
+As seções novas são `auto-sampler`, `auto-sampler-rascunho`,
+`conversor-avancado`, `mapeador-velocity`, `conversor-midi` e
+`auto-sampler-problemas`, todas acessíveis pelo índice da Ajuda. A proteção
+contra clique fora e o reset do Auto Sampler estão documentados em
+`mrq-auto-sampler.md` §8.

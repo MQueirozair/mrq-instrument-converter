@@ -31,6 +31,7 @@ import {
   Pencil,
   CheckSquare,
 } from 'lucide-react';
+import HelpAdvancedGuide from './HelpAdvancedGuide';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -75,6 +76,12 @@ const TOC: { id: string; label: string }[] = [
   { id: 'midi', label: 'MIDI / Pad' },
   { id: 'rack', label: 'Rack de instrumentos' },
   { id: 'conversor', label: 'Conversor de instrumentos' },
+  { id: 'auto-sampler', label: 'Auto Sampler (ilustrado)' },
+  { id: 'auto-sampler-rascunho', label: 'Rascunho / Voltar do zero' },
+  { id: 'conversor-avancado', label: 'Conversor avançado' },
+  { id: 'mapeador-velocity', label: 'Divisão de velocity' },
+  { id: 'conversor-midi', label: 'Pré-escuta USB MIDI' },
+  { id: 'auto-sampler-problemas', label: 'Problemas comuns' },
   { id: 'remoto', label: 'Controle remoto' },
   { id: 'osc', label: 'OSC / MRQ Sync' },
   { id: 'palco', label: 'Modo Palco' },
@@ -120,8 +127,22 @@ export default function HelpPanel() {
             uma delas, os formatos de arquivo aceitos e o passo a passo de configuração.
           </p>
 
+          <div className="help-callout tip help-manual-callout">
+            <b>Manual ilustrado do Conversor e do Auto Sampler:</b> esta Ajuda agora traz imagens de cada etapa —
+            tela real de conexão, roteamento MIDI/áudio, teclado, barras de velocity, captura, rascunho automático,
+            Editor de Mapeamento e pré-escuta MIDI. Cada controle é explicado com exemplos numéricos e uma seção
+            de problemas comuns no fim. Use os atalhos abaixo para ir direto ao que procura:
+            <div className="help-jump-row">
+              <button type="button" onClick={() => goTo('auto-sampler')}>1–4 · Auto Sampler passo a passo</button>
+              <button type="button" onClick={() => goTo('auto-sampler-rascunho')}>Rascunho / Voltar do zero</button>
+              <button type="button" onClick={() => goTo('mapeador-velocity')}>Divisões 10 / 48 / 81</button>
+              <button type="button" onClick={() => goTo('conversor-midi')}>Pré-escuta USB MIDI</button>
+              <button type="button" onClick={() => goTo('auto-sampler-problemas')}>Problemas comuns</button>
+            </div>
+          </div>
+
           <div className="help-callout" style={{ marginBottom: 18 }}>
-            <b>Correções desta versão:</b> a detecção automática de partes (Arranjar → "Reconhecer partes") foi
+            <b>Histórico — correções de detecção de partes:</b> a detecção automática de partes (Arranjar → "Reconhecer partes") foi
             refeita de novo, mais a fundo — agora usa o próprio silêncio da voz-guia pra achar com mais confiança
             onde começam e terminam os trechos instrumentais (intro, interlúdio, solo, ponte instrumental), separa
             "Pré-refrão" de "Verso" pela duração mais curta antes do refrão, e usa o volume de verdade da faixa (não
@@ -134,7 +155,7 @@ export default function HelpPanel() {
             outras faixas).
           </div>
           <div className="help-callout" style={{ marginBottom: 18 }}>
-            <b>Também nesta leva:</b> pílula de acorde maior (mostra o acorde inteiro, sem cortar) · Tap tempo ·
+            <b>Histórico — recursos incluídos anteriormente:</b> pílula de acorde maior (mostra o acorde inteiro, sem cortar) · Tap tempo ·
             Loop A/B de ensaio · Modo Palco — Telão (cifra em tela cheia) · Folha de roteiro pra imprimir/PDF ·
             Monitor de saúde do áudio (avisa sobre soluços ao vivo) · acorde ao vivo transmitido pro celular de toda
             a banda · Cues de palco por parte (OSC/MIDI) · e duas tecnologias novas — ponte <b>OSC</b> com software de
@@ -1179,6 +1200,10 @@ export default function HelpPanel() {
             caption="A aba Compatibilidade nunca esconde limitação: aqui, o que o conversor de .exs preserva, aproxima e não suporta."
           />
         </section>
+
+        {/* Manual ilustrado e detalhado do Auto Sampler + recursos avançados
+            do Conversor (v0.2.15). As seções têm ids próprios no índice. */}
+        <HelpAdvancedGuide goTo={goTo} />
 
         {/* ---------------- CONTROLE REMOTO ---------------- */}
         <section className="help-section" id="remoto">

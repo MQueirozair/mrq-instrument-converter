@@ -208,3 +208,59 @@ Nesse caso, confira nesta ordem:
   algoritmo de ressíntese proprietário da Apple/Redmatica, nunca
   documentado publicamente — reimplementá-lo seria inventar um
   comportamento parecido e fingir paridade que não existe de verdade.
+
+## 8. v0.2.15 — rascunho persistente, clique fora protegido e "Voltar do zero"
+
+**Problema relatado:** ao ajustar porta/canal MIDI, entrada de áudio, ganho,
+faixa de notas, velocity, sustain, loop etc., um clique acidental na área
+escura fora do modal fechava o componente. Como todo o estado do assistente
+vivia em `useState` dentro do modal, reabrir recomeçava do zero.
+
+**Correção em três camadas:**
+
+1. **Clique fora não fecha.** O `onClick={handleClose}` do `.modal-overlay`
+   foi removido. O X continua sendo a única forma explícita de sair; durante
+   uma captura, o X/Cancelar interrompe a captura sem apagar as configs.
+2. **O modal não é mais desmontado ao fechar.** `InstrumentConverter.tsx`
+   renderiza `<AutoSamplerDialog open={autoSamplerDialogOpen} ...>`
+   permanentemente; `open=false` só aplica `display:none` ao overlay. Assim
+   listas de dispositivos já descobertas, permissões, VU, passo atual e todos
+   os campos continuam vivos entre fechar/reabrir. O medidor recebe
+   `levelMeterEnabled = open && ...` para liberar o stream de áudio quando
+   escondido.
+3. **Rascunho validado em armazenamento local.**
+   `src/audio/rack/autoSamplerDraft.ts` normaliza/grava um snapshot escalar
+   na chave `mrq.autoSampler.draft.v1`: passo, nome, faixa/intervalo,
+   camadas e pontos Custom de velocity, round robin, tempos, loop, one-shot,
+   ganho, IDs/nomes das portas, canal, testes e formatos de saída. Isso cobre
+   trocar de tela ou reiniciar o aplicativo. Não são salvos áudio, resultados
+   de captura, progresso em andamento nem objetos grandes. A normalização
+   rejeita versão diferente, JSON corrompido, NaN/Infinity, curvas/modos
+   inválidos e breakpoints Custom fora do formato exigido pelo motor; um
+   storage bloqueado ou cheio nunca derruba o modal.
+
+Um dispositivo salvo temporariamente desconectado **não é trocado em
+silêncio** pelo primeiro da lista: o `<select>` mostra o nome do rascunho
+num optgroup próprio até o usuário atualizar/reconectar. No macOS/Linux o SO
+pode pedir novamente a permissão de microfone após reiniciar; isso é
+privacidade do sistema, não perda do rascunho.
+
+**Reset deliberado:** o rodapé tem o botão **"Limpar tudo / Voltar do
+zero"**, com confirmação. `handleResetAll()` restaura todos os defaults,
+limpa resultados/erros da tela, volta ao passo 1 e chama
+`clearAutoSamplerDraft()`. O efeito de persistência também remove a chave
+quando o snapshot volta exatamente ao default — "do zero" significa nenhum
+rascunho salvo sobrando. Arquivos `.mrq`/SoundFont já exportados não são
+apagados.
+
+**Ajuda ilustrada:** `HelpAdvancedGuide.tsx` adiciona um manual detalhado em
+seis seções, com imagens locais em `public/help` (9 SVG mais uma tela real
+anotada em PNG): roteamento MIDI/áudio, os quatro passos, rascunho/reset,
+fluxo do Conversor, divisão de velocity e pré-escuta USB MIDI, além de
+tabelas de controles e problemas comuns. Os SVG não usam fontes, scripts ou
+imagens externas e funcionam offline no Tauri.
+
+**Testes:** `scripts/test-auto-sampler-draft.mjs` cobre default limpo,
+preservação integral dos campos, reparo de Custom inválido, limites da UI,
+roundtrip de gravação/restauração, remoção da chave no reset, JSON inválido e
+storage que lança exceção (`npm run test:auto-sampler-draft`, 9 testes).

@@ -48,6 +48,15 @@ import {
   type AutoSamplerRunResult,
   type MidiPortInfo,
 } from '../audio/rack/autoSampler';
+import {
+  AUTO_SAMPLER_DRAFT_VERSION,
+  clearAutoSamplerDraft,
+  createDefaultAutoSamplerDraft,
+  readAutoSamplerDraft,
+  writeAutoSamplerDraft,
+  type AutoSamplerDraft,
+  type AutoSamplerStepId,
+} from '../audio/rack/autoSamplerDraft';
 import { useInputLevelMeter } from '../audio/rack/useInputLevelMeter';
 import { useStore } from '../state/useStore';
 import SampleNoteRangeKeyboard from './SampleNoteRangeKeyboard';
@@ -68,6 +77,10 @@ export interface AutoSamplerResult {
 }
 
 interface Props {
+  /** O modal permanece MONTADO quando fechado (só escondido por CSS). Assim
+   *  dispositivos já descobertos, permissões e o rascunho em memória não são
+   *  perdidos; o localStorage cobre também o caso de reiniciar o app. */
+  open: boolean;
   onClose: () => void;
   onImported: (result: AutoSamplerResult) => void;
 }
@@ -153,7 +166,7 @@ const SAMPLER_PRESETS: SamplerPreset[] = [
   },
 ];
 
-type StepId = 1 | 2 | 3 | 4;
+type StepId = AutoSamplerStepId;
 
 const STEP_LABELS: Record<StepId, string> = {
   1: 'Conexão',
@@ -176,35 +189,44 @@ function formatDbfs(peak: number): string {
   return `${db.toFixed(1)} dB`;
 }
 
-export default function AutoSamplerDialog({ onClose, onImported }: Props) {
+export default function AutoSamplerDialog({ open, onClose, onImported }: Props) {
   const pushToast = useStore((s) => s.pushToast);
-  const [step, setStep] = useState<StepId>(1);
+  // Lido UMA vez na montagem. Como o componente continua montado enquanto o
+  // modal está escondido, fechar/reabrir preserva inclusive listas de
+  // dispositivos; este rascunho cobre também reiniciar o aplicativo.
+  const initialDraft = useMemo<AutoSamplerDraft>(
+    () => readAutoSamplerDraft() ?? createDefaultAutoSamplerDraft(),
+    []
+  );
+  const [step, setStep] = useState<StepId>(initialDraft.step);
 
   // --- configuração da captura ---
-  const [instrumentName, setInstrumentName] = useState('Instrumento Auto Sampler');
-  const [rangeStartNote, setRangeStartNote] = useState(48); // C3
-  const [rangeEndNote, setRangeEndNote] = useState(72); // C5
-  const [sampleEverySemitones, setSampleEverySemitones] = useState(3);
-  const [roundRobinCount, setRoundRobinCount] = useState(1);
-  const [sustainSeconds, setSustainSeconds] = useState(2);
-  const [releaseTailSeconds, setReleaseTailSeconds] = useState(1);
-  const [velocityLayers, setVelocityLayers] = useState(1);
-  const [velocityResponse, setVelocityResponse] = useState<VelocityResponseCurve>('linear');
-  const [customVelocityBreakpoints, setCustomVelocityBreakpoints] = useState<number[] | undefined>(undefined);
-  const [autoLoop, setAutoLoop] = useState<AutoLoopMode>('none');
-  const [autoLoopStartPct, setAutoLoopStartPct] = useState(40);
-  const [autoLoopEndPct, setAutoLoopEndPct] = useState(90);
-  const [oneShot, setOneShot] = useState(false);
-  const [inputGainDb, setInputGainDb] = useState(0);
+  const [instrumentName, setInstrumentName] = useState(initialDraft.instrumentName);
+  const [rangeStartNote, setRangeStartNote] = useState(initialDraft.rangeStartNote); // C3
+  const [rangeEndNote, setRangeEndNote] = useState(initialDraft.rangeEndNote); // C5
+  const [sampleEverySemitones, setSampleEverySemitones] = useState(initialDraft.sampleEverySemitones);
+  const [roundRobinCount, setRoundRobinCount] = useState(initialDraft.roundRobinCount);
+  const [sustainSeconds, setSustainSeconds] = useState(initialDraft.sustainSeconds);
+  const [releaseTailSeconds, setReleaseTailSeconds] = useState(initialDraft.releaseTailSeconds);
+  const [velocityLayers, setVelocityLayers] = useState(initialDraft.velocityLayers);
+  const [velocityResponse, setVelocityResponse] = useState<VelocityResponseCurve>(initialDraft.velocityResponse);
+  const [customVelocityBreakpoints, setCustomVelocityBreakpoints] = useState<number[] | undefined>(initialDraft.customVelocityBreakpoints);
+  const [autoLoop, setAutoLoop] = useState<AutoLoopMode>(initialDraft.autoLoop);
+  const [autoLoopStartPct, setAutoLoopStartPct] = useState(initialDraft.autoLoopStartPct);
+  const [autoLoopEndPct, setAutoLoopEndPct] = useState(initialDraft.autoLoopEndPct);
+  const [oneShot, setOneShot] = useState(initialDraft.oneShot);
+  const [inputGainDb, setInputGainDb] = useState(initialDraft.inputGainDb);
 
   // --- dispositivos (MIDI + áudio) ---
   const [midiOutputs, setMidiOutputs] = useState<MidiPortInfo[]>([]);
-  const [midiOutputId, setMidiOutputId] = useState<string>('');
-  const [midiChannel, setMidiChannel] = useState(1); // 1-16, exibido pro usuário; convertido pra 0-based só na hora de enviar.
+  const [midiOutputId, setMidiOutputId] = useState<string>(initialDraft.midiOutputId);
+  const [midiOutputLabel, setMidiOutputLabel] = useState(initialDraft.midiOutputLabel);
+  const [midiChannel, setMidiChannel] = useState(initialDraft.midiChannel); // 1-16, exibido pro usuário; convertido pra 0-based só na hora de enviar.
   const [audioInputs, setAudioInputs] = useState<AudioInputDeviceInfo[]>([]);
   /** Só vira `true` no Windows (ver `isNativeLoopbackSupported`/loopback_audio.rs) — controla se os dispositivos de loopback nativo entram na lista, como alternativa ao cabo de áudio virtual. */
   const [nativeLoopbackSupported, setNativeLoopbackSupported] = useState(false);
-  const [audioInputDeviceId, setAudioInputDeviceId] = useState<string>(SYSTEM_DEFAULT_AUDIO_INPUT_ID);
+  const [audioInputDeviceId, setAudioInputDeviceId] = useState<string>(initialDraft.audioInputDeviceId);
+  const [audioInputLabel, setAudioInputLabel] = useState(initialDraft.audioInputLabel);
 
   // MIDI e áudio são carregados/tratados INDEPENDENTEMENTE — uma falha num
   // não pode esconder nem bloquear o outro.
@@ -212,12 +234,12 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   const [midiError, setMidiError] = useState<string | null>(null);
   const [audioLoading, setAudioLoading] = useState(true);
   const [audioError, setAudioError] = useState<string | null>(null);
-  const [midiTested, setMidiTested] = useState(false);
-  const [audioTested, setAudioTested] = useState(false);
+  const [midiTested, setMidiTested] = useState(initialDraft.midiTested);
+  const [audioTested, setAudioTested] = useState(initialDraft.audioTested);
 
   // --- saída ---
-  const [outputMrq, setOutputMrq] = useState(true);
-  const [outputSf2, setOutputSf2] = useState(true);
+  const [outputMrq, setOutputMrq] = useState(initialDraft.outputMrq);
+  const [outputSf2, setOutputSf2] = useState(initialDraft.outputSf2);
 
   // --- execução ---
   const [running, setRunning] = useState(false);
@@ -225,7 +247,10 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   const [result, setResult] = useState<AutoSamplerRunResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [outcomes, setOutcomes] = useState<AutoSamplerCaptureOutcome[]>([]);
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
   const sessionRef = useRef<AutoSamplerSession | null>(null);
+  const previousVelocityLayersRef = useRef(initialDraft.velocityLayers);
+  const devicesLoadedRef = useRef(false);
 
   async function loadMidiOutputs() {
     setMidiLoading(true);
@@ -233,7 +258,15 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     try {
       const outs = await listMidiOutputs();
       setMidiOutputs(outs);
-      setMidiOutputId((prev) => (outs.some((o) => o.id === prev) ? prev : outs[0]?.id ?? ''));
+      // Não troca silenciosamente uma porta salva que esteja temporariamente
+      // desconectada: o <select> mostra o nome do rascunho até ela voltar.
+      const saved = outs.find((o) => o.id === midiOutputId);
+      if (saved) {
+        setMidiOutputLabel(saved.name);
+      } else if (!midiOutputId && outs[0]) {
+        setMidiOutputId(outs[0].id);
+        setMidiOutputLabel(outs[0].name);
+      }
       if (outs.length === 0) {
         setMidiError(
           'Nenhuma porta MIDI de saída encontrada. Crie/ative uma porta MIDI virtual roteada até o Kontakt (IAC Driver no macOS, loopMIDI no Windows, aconnect/a2jmidid no Linux — ver docs/mrq-instrument-converter/mrq-auto-sampler.md) e clique em "Atualizar portas MIDI".'
@@ -276,10 +309,19 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       }
     }
     setAudioInputs(combined);
+    const matched = combined.find((d) => d.id === audioInputDeviceId);
+    if (matched) setAudioInputLabel(matched.label);
+    else if (audioInputDeviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID) {
+      setAudioInputLabel('Microfone / Entrada padrão do sistema');
+    }
     setAudioLoading(false);
   }
 
   useEffect(() => {
+    // O componente fica montado desde a tela do Conversor, mas só consulta
+    // dispositivos na PRIMEIRA abertura do modal (não no boot do app).
+    if (!open || devicesLoadedRef.current) return;
+    devicesLoadedRef.current = true;
     void loadMidiOutputs();
     // No Windows, carrega IMEDIATAMENTE os dispositivos de saída via loopback
     // nativo (WASAPI) ao abrir o modal — eles não precisam de permissão de
@@ -295,9 +337,14 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
             const nonNative = prev.filter((d) => !isNativeLoopbackDeviceId(d.id));
             return [...nativeDevs, ...nonNative];
           });
-          setAudioInputDeviceId((prev) =>
-            prev === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? NATIVE_LOOPBACK_DEFAULT_ID : prev
-          );
+          if (audioInputDeviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID) {
+            const nativeDefault =
+              nativeDevs.find((d) => d.id === NATIVE_LOOPBACK_DEFAULT_ID) ?? nativeDevs[0];
+            if (nativeDefault) {
+              setAudioInputDeviceId(nativeDefault.id);
+              setAudioInputLabel(nativeDefault.label);
+            }
+          }
         } catch {
           /* se falhar, o botão manual continua disponível abaixo */
         }
@@ -305,16 +352,17 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       setAudioLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
 
-  // Muda o número de camadas invalida qualquer breakpoint customizado
-  // anterior (o motor exige exatamente layers+1 pontos) — melhor recomeçar
-  // do zero numa curva padrão do que arriscar mandar um array com o
-  // tamanho errado pro motor.
+  // Mudar o número de camadas invalida qualquer breakpoint customizado
+  // anterior (o motor exige exatamente layers+1 pontos). Só reage a uma
+  // MUDANÇA real do usuário/preset: sem isso, restaurar um rascunho Custom
+  // apagaria os pontos salvos já no primeiro render.
   useEffect(() => {
+    if (previousVelocityLayersRef.current === velocityLayers) return;
+    previousVelocityLayersRef.current = velocityLayers;
     setCustomVelocityBreakpoints(undefined);
     setVelocityResponse((prev) => (prev === 'custom' ? 'linear' : prev));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [velocityLayers]);
 
   const velocityBreakpoints = useMemo(() => {
@@ -347,7 +395,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   // compartilha a mesma sessão Rust e continua medindo inclusive durante a
   // captura (`running === true`).
   const usingNativeLoopbackUi = isNativeLoopbackDeviceId(audioInputDeviceId);
-  const levelMeterEnabled = audioInputDeviceId !== '' && (usingNativeLoopbackUi || !running);
+  const levelMeterEnabled = open && audioInputDeviceId !== '' && (usingNativeLoopbackUi || !running);
   const { levels: meterLevels, error: meterError, retryNow: retryMeter } = useInputLevelMeter(
     audioInputDeviceId,
     levelMeterEnabled,
@@ -389,6 +437,48 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
     }
   }, [config]);
 
+  /** Um snapshot compacto, só com escalares. Gravado a cada ajuste; o botão
+   *  "Voltar do zero" restaura este default e remove a chave do storage. */
+  const persistedDraft = useMemo<AutoSamplerDraft>(() => ({
+    version: AUTO_SAMPLER_DRAFT_VERSION,
+    step,
+    instrumentName,
+    rangeStartNote,
+    rangeEndNote,
+    sampleEverySemitones,
+    velocityLayers,
+    velocityResponse,
+    customVelocityBreakpoints,
+    roundRobinCount,
+    sustainSeconds,
+    releaseTailSeconds,
+    autoLoop,
+    autoLoopStartPct,
+    autoLoopEndPct,
+    oneShot,
+    inputGainDb,
+    midiOutputId,
+    midiOutputLabel,
+    midiChannel,
+    audioInputDeviceId,
+    audioInputLabel,
+    midiTested,
+    audioTested,
+    outputMrq,
+    outputSf2,
+  }), [
+    step, instrumentName, rangeStartNote, rangeEndNote, sampleEverySemitones,
+    velocityLayers, velocityResponse, customVelocityBreakpoints, roundRobinCount,
+    sustainSeconds, releaseTailSeconds, autoLoop, autoLoopStartPct, autoLoopEndPct,
+    oneShot, inputGainDb, midiOutputId, midiOutputLabel, midiChannel,
+    audioInputDeviceId, audioInputLabel, midiTested, audioTested, outputMrq, outputSf2,
+  ]);
+
+  useEffect(() => {
+    if (!open) return;
+    writeAutoSamplerDraft(persistedDraft);
+  }, [open, persistedDraft]);
+
   function validateBeforeStart(): string | null {
     if (rangeEndNote < rangeStartNote) return 'Range End precisa ser >= Range Start.';
     if (!midiOutputId) return 'Escolha uma porta MIDI de saída (roteada até a entrada MIDI do Kontakt).';
@@ -425,6 +515,7 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
 
   async function handleSample(onlyTaskIds?: Set<string>) {
     setError(null);
+    setShowResetConfirm(false);
     const validationError = validateBeforeStart();
     if (validationError) {
       setError(validationError);
@@ -539,7 +630,50 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
       sessionRef.current?.cancel();
       return;
     }
-    onClose();
+    setShowResetConfirm(false);
+    onClose(); // NÃO desmonta: o chamador só esconde o modal (prop `open`).
+  }
+
+  /** Ação EXPLÍCITA e confirmada: apaga o rascunho salvo e devolve todos os
+   *  campos, passos, formatos de saída e resultados ao estado inicial. */
+  function handleResetAll() {
+    if (running) return;
+    const d = createDefaultAutoSamplerDraft();
+    clearAutoSamplerDraft();
+    setStep(d.step);
+    setInstrumentName(d.instrumentName);
+    setRangeStartNote(d.rangeStartNote);
+    setRangeEndNote(d.rangeEndNote);
+    setSampleEverySemitones(d.sampleEverySemitones);
+    setVelocityLayers(d.velocityLayers);
+    setVelocityResponse(d.velocityResponse);
+    setCustomVelocityBreakpoints(d.customVelocityBreakpoints);
+    setRoundRobinCount(d.roundRobinCount);
+    setSustainSeconds(d.sustainSeconds);
+    setReleaseTailSeconds(d.releaseTailSeconds);
+    setAutoLoop(d.autoLoop);
+    setAutoLoopStartPct(d.autoLoopStartPct);
+    setAutoLoopEndPct(d.autoLoopEndPct);
+    setOneShot(d.oneShot);
+    setInputGainDb(d.inputGainDb);
+    setMidiOutputId(d.midiOutputId);
+    setMidiOutputLabel(d.midiOutputLabel);
+    setMidiChannel(d.midiChannel);
+    setAudioInputDeviceId(d.audioInputDeviceId);
+    setAudioInputLabel(d.audioInputLabel);
+    setMidiTested(d.midiTested);
+    setAudioTested(d.audioTested);
+    setOutputMrq(d.outputMrq);
+    setOutputSf2(d.outputSf2);
+    previousVelocityLayersRef.current = d.velocityLayers;
+    setProgress(null);
+    setResult(null);
+    setOutcomes([]);
+    setError(null);
+    setMidiError(null);
+    setAudioError(null);
+    setShowResetConfirm(false);
+    pushToast('Auto Sampler: todas as configurações foram limpas. Você voltou do zero.');
   }
 
   // --- status por nota (pro teclado colorir) ---
@@ -573,8 +707,21 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
 
   // --- checklist de setup (passo 1) ---
   const checklist = [
-    { label: 'Porta MIDI escolhida', done: Boolean(midiOutputId), hint: midiOutputs.find((m) => m.id === midiOutputId)?.name },
-    { label: 'Entrada de áudio escolhida', done: Boolean(audioInputDeviceId), hint: audioInputDeviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? 'Padrão do sistema' : audioInputs.find((d) => d.id === audioInputDeviceId)?.label },
+    {
+      label: 'Porta MIDI escolhida',
+      done: Boolean(midiOutputId),
+      hint: midiOutputs.find((m) => m.id === midiOutputId)?.name
+        ?? (midiOutputId ? midiOutputLabel || 'Porta salva no rascunho (verifique a conexão)' : undefined),
+    },
+    {
+      label: 'Entrada de áudio escolhida',
+      done: Boolean(audioInputDeviceId),
+      hint: audioInputDeviceId === SYSTEM_DEFAULT_AUDIO_INPUT_ID
+        ? 'Padrão do sistema'
+        : audioInputs.find((d) => d.id === audioInputDeviceId)?.label
+          ?? audioInputLabel
+          ?? 'Dispositivo salvo no rascunho',
+    },
     { label: 'Nível de entrada visível', done: !meterError && audioInputDeviceId !== '', hint: meterError ? 'erro no medidor' : 'VU L/R ao vivo' },
   ];
   const setupReady = checklist.every((c) => c.done) && !loadingDevices;
@@ -586,13 +733,37 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
   };
 
   return (
-    <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal as-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 860, width: 'min(860px, 94vw)' }}>
+    // IMPORTANTE: sem onClick no overlay. Um clique acidental na área escura
+    // NÃO fecha mais o modal e, portanto, não pode descartar os ajustes.
+    // Quando `open` é false o modal fica apenas escondido, SEM desmontar.
+    <div
+      className="modal-overlay as-modal-overlay"
+      style={{ display: open ? undefined : 'none' }}
+      aria-hidden={!open}
+    >
+      <div
+        className="modal as-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal={open}
+        aria-label="Auto Sampler"
+        style={{ maxWidth: 860, width: 'min(860px, 94vw)' }}
+      >
         <div className="modal-header">
-          <h3>
-            <Music size={16} /> Auto Sampler
-          </h3>
-          <button className="btn-icon" onClick={handleClose} aria-label="Fechar">
+          <div className="as-header-title">
+            <h3>
+              <Music size={16} /> Auto Sampler
+            </h3>
+            <span className="as-draft-badge">
+              <Check size={12} /> Rascunho salvo automaticamente · clique fora não fecha
+            </span>
+          </div>
+          <button
+            className="btn-icon"
+            onClick={handleClose}
+            aria-label="Fechar o Auto Sampler (os ajustes continuam salvos)"
+            title="Fechar — os ajustes continuam salvos"
+          >
             <X size={16} />
           </button>
         </div>
@@ -644,6 +815,14 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                 Conecte o instrumento: o Auto Sampler manda notas MIDI pra ele e grava o áudio que volta.
                 No Windows, o <strong>loopback nativo</strong> captura a saída do sistema sem cabo virtual.
               </p>
+              <div className="as-save-note">
+                <Check size={13} />
+                <span>
+                  <b>Seus ajustes estão seguros:</b> são salvos automaticamente; clicar fora desta janela não
+                  fecha nem apaga nada. Para sair, use o <b>X</b>. Para apagar tudo de propósito, use{' '}
+                  <b>“Voltar do zero”</b> no rodapé.
+                </span>
+              </div>
 
               <div className="as-checklist">
                 {checklist.map((c) => (
@@ -660,8 +839,21 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                   <h4>MIDI — saída pro instrumento</h4>
                   <div className="field-row">
                     <div className="label">Porta MIDI</div>
-                    <select value={midiOutputId} onChange={(e) => { setMidiOutputId(e.target.value); setMidiTested(false); }} disabled={running || midiLoading}>
+                    <select
+                      value={midiOutputId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setMidiOutputId(id);
+                        setMidiOutputLabel(midiOutputs.find((o) => o.id === id)?.name ?? '');
+                        setMidiTested(false);
+                      }}
+                      disabled={running || midiLoading}
+                    >
                       {midiOutputs.length === 0 && <option value="">Nenhuma porta encontrada</option>}
+                      {midiOutputs.length > 0 && midiOutputId === '' && <option value="">Selecione uma porta MIDI…</option>}
+                      {midiOutputId && !midiOutputs.some((o) => o.id === midiOutputId) && (
+                        <option value={midiOutputId}>{midiOutputLabel || 'Porta salva no rascunho (desconectada)'}</option>
+                      )}
                       {midiOutputs.map((o) => (
                         <option key={o.id} value={o.id}>{o.name}</option>
                       ))}
@@ -703,7 +895,27 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
                   )}
                   <div className="field-row">
                     <div className="label">Dispositivo</div>
-                    <select value={audioInputDeviceId} onChange={(e) => { setAudioInputDeviceId(e.target.value); setAudioTested(false); }} disabled={running || audioLoading}>
+                    <select
+                      value={audioInputDeviceId}
+                      onChange={(e) => {
+                        const id = e.target.value;
+                        setAudioInputDeviceId(id);
+                        setAudioInputLabel(
+                          audioInputs.find((d) => d.id === id)?.label
+                          ?? (id === SYSTEM_DEFAULT_AUDIO_INPUT_ID ? 'Microfone / Entrada padrão do sistema' : '')
+                        );
+                        setAudioTested(false);
+                      }}
+                      disabled={running || audioLoading}
+                    >
+                      {audioInputDeviceId !== SYSTEM_DEFAULT_AUDIO_INPUT_ID
+                        && !audioInputs.some((d) => d.id === audioInputDeviceId) && (
+                        <optgroup label="Dispositivo salvo no rascunho">
+                          <option value={audioInputDeviceId}>
+                            {audioInputLabel || 'Dispositivo desconectado — verifique/atualize'}
+                          </option>
+                        </optgroup>
+                      )}
                       {audioInputs.some((d) => isNativeLoopbackDeviceId(d.id)) && (
                         <optgroup label="Saída de som do sistema — Loopback nativo (grava o que sai no PC)">
                           {audioInputs.filter((d) => isNativeLoopbackDeviceId(d.id)).map((d) => (
@@ -1015,13 +1227,49 @@ export default function AutoSamplerDialog({ onClose, onImported }: Props) {
           )}
         </div>
 
-        <div className="kc-footer">
-          <div>
-            {step > 1 && (
-              <button type="button" className="btn btn-secondary" onClick={() => setStep((s) => (s - 1) as StepId)} disabled={running}>
-                Voltar
+        {showResetConfirm && (
+          <div className="as-reset-confirm" role="alertdialog" aria-label="Confirmar limpeza total das configurações">
+            <div className="as-reset-confirm-icon"><AlertTriangle size={18} /></div>
+            <div className="as-reset-confirm-text">
+              <b>Limpar TODAS as configurações e voltar do zero?</b>
+              <span>
+                O rascunho salvo será apagado: portas/canais, faixa de notas, velocity, sustain/release,
+                loop, ganho, formatos de saída e resultados da tela. Você volta ao passo 1.
+                Arquivos .mrq/.sf2 já exportados não são apagados.
+              </span>
+            </div>
+            <div className="as-reset-confirm-actions">
+              <button type="button" className="btn btn-secondary" onClick={() => setShowResetConfirm(false)}>
+                Cancelar
               </button>
-            )}
+              <button type="button" className="btn btn-danger" onClick={handleResetAll}>
+                <RotateCcw size={13} /> Sim, limpar tudo
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="kc-footer">
+          <div className="as-footer-left">
+            <div className="as-footer-nav">
+              {step > 1 && (
+                <button type="button" className="btn btn-secondary" onClick={() => setStep((s) => (s - 1) as StepId)} disabled={running}>
+                  Voltar
+                </button>
+              )}
+              <button
+                type="button"
+                className="btn ghost small as-reset-btn"
+                onClick={() => setShowResetConfirm(true)}
+                disabled={running}
+                title="Apaga o rascunho salvo e restaura todas as configurações iniciais"
+              >
+                <RotateCcw size={13} /> Limpar tudo / Voltar do zero
+              </button>
+            </div>
+            <span className="as-footer-save-hint">
+              <Check size={11} /> Ajustes salvos · clique fora não fecha · use X para sair
+            </span>
           </div>
           <div className="as-footer-actions">
             {running ? (
