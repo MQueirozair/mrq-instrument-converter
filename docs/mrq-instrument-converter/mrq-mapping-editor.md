@@ -208,3 +208,74 @@ apresentacional e recebe callbacks de `InstrumentConverter`.
    Ctrl+setas; teste Auto-Spread / Auto-Map / Set Key Range via MIDI.
 6. Dê duplo clique numa zona para ver a forma de onda; **Salvar edições**
    guarda tudo no item da fila.
+
+---
+
+## 5. Divisórias de Velocity (v0.2.13) — ajuste com o mouse, posição exata de cada amostra
+
+Pedido do usuário, a partir da foto do `VelocityBreakpointEditor` do Auto
+Sampler (barra azul com alças arrastáveis e a legenda *"Arraste uma divisória
+..."*): **"consegue fazer com que eu ajuste com o mouse as regiões de velocity
+que quero mover, o lugar ou posição certa de cada amostra — tipo 0 a 10 parte
+1, 10 a 48 parte 2, 48 a 81 parte 3, 81 a 127"**.
+
+A barra foi levada para o Editor de Mapeamento com uma diferença importante:
+no Auto Sampler ela edita os pontos de quebra de uma *curva de resposta*;
+aqui ela edita **as faixas `loVel`/`hiVel` das zonas reais**. Arrastar uma
+divisória escreve no modelo, e a grade key×velocity muda junto, em tempo real
+— o som tocado pelo controlador MIDI USB passa a disparar a amostra certa na
+nova faixa.
+
+### Como abrir
+
+Botão **"Divisórias de Velocity"** na 2ª fileira do control strip, ou
+`Edit → Abrir divisórias de Velocity…`.
+
+### O que dá pra fazer
+
+| Ação | Efeito |
+| --- | --- |
+| Arrastar uma **divisória** (alça amarela com o número) | Muda `hiVel` da parte à esquerda e `loVel` da parte à direita, sem nunca inverter a ordem nem deixar uma parte com menos de 1 velocity. |
+| Arrastar o **corpo** de uma parte | Desloca a camada inteira: as duas bordas andam juntas (útil para reposicionar uma amostra). |
+| Clicar numa parte / no cartão abaixo | Seleciona a zona (a grade e a status line acompanham). |
+| Duplo clique | Abre o Wave Editor da amostra. |
+| **Distribuir igualmente** | Divide 0–127 em N partes iguais. |
+| **Esticar pontas 0–127** | Faz a 1ª parte começar em 0 e a última terminar em 127, mantendo as divisórias internas. |
+| Preset **4 partes · 10 / 48 / 81** | Aplica exatamente o exemplo pedido. |
+| Campo **"Divisórias exatas"** | Digite `10, 48, 81` (ou qualquer lista com N−1 valores) e clique Aplicar/Enter. |
+| **Aplicar a todos os conjuntos** | Num piano multisampleado cada faixa de teclas tem sua própria pilha de camadas. Um único arraste replica as mesmas divisórias em todos os conjuntos com o mesmo número de camadas. |
+| Seletor **"Conjunto de camadas"** | Escolhe qual pilha (grupo + faixa de teclas) está sendo editada. |
+
+### Convenção dos números (importante)
+
+As faixas **não se sobrepõem** (como no Kontakt). O número mostrado na
+divisória é o **início da parte seguinte**. Então divisórias em
+**10 / 48 / 81** produzem:
+
+| Parte | Amostra | Faixa MIDI real |
+| --- | --- | --- |
+| 1 | amostra mais suave | `0–9` |
+| 2 | ... | `10–47` |
+| 3 | ... | `48–80` |
+| 4 | amostra mais forte | `81–127` |
+
+É exatamente o "0 a 10 / 10 a 48 / 48 a 81 / 81 a 127" da foto, só sem
+repetir o valor de fronteira dentro de duas zonas ao mesmo tempo. Áreas
+**cinzas** na barra indicam buracos (velocity sem nenhuma amostra); o botão
+*Esticar pontas* remove esses buracos.
+
+### Implementação
+
+- `src/audio/rack/velocitySplit.ts` — lógica **pura** e testável:
+  `deriveEdges`, `sanitizeEdges`, `edgesToRanges`, `edgesToPatches`,
+  `moveDivider`, `moveSegment`, `equalEdges`, `stretchEdges`.
+- `src/components/VelocitySplitEditor.tsx` — barra com `PointerEvent` +
+  `setPointerCapture` (funciona com mouse e touch), réguas 0/16/…/127,
+  cartões por amostra, presets e campo de valores exatos.
+- `src/components/MappingEditor.tsx` — agrupa as zonas visíveis por
+  `grupo + loKey + hiKey` para montar os "conjuntos de camadas", aplica os
+  patches via `applyPatches` (com histórico/Desfazer) e mantém a grade
+  sincronizada.
+- `scripts/test-velocity-split.mjs` — 14 testes de regressão, incluindo o
+  exemplo `10/48/81`, arrastes com clamp, distribuição igual, esticar pontas
+  e replicação em vários conjuntos. Rode com `npm run test:velocity-split`.

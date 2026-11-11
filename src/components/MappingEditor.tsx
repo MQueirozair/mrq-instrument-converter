@@ -86,6 +86,7 @@ import { mrqDecodedSampleToAudioBuffer, mrqExtractSample } from '../audio/rack/m
 import { midiNoteName, noteNameToMidi } from '../audio/rack/midiNoteNames';
 import { readFileBytes } from '../audio/rack/converterFormats';
 import { computePeaks } from '../audio/waveform';
+import VelocitySplitEditor, { type VelocitySplitPatch, type VelocitySplitSet } from './VelocitySplitEditor';
 import {
   initRackMidi,
   isRackMidiSupported,
@@ -296,6 +297,9 @@ export default function MappingEditor({
   const [waveZoneKey, setWaveZoneKey] = useState<string | null>(null);
   const [exchangeOpen, setExchangeOpen] = useState(false);
   const [onScreenVel, setOnScreenVel] = useState(100);
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitSetKey, setSplitSetKey] = useState<string | null>(null);
+  const [splitApplyAll, setSplitApplyAll] = useState(true);
 
   const [midiInputs, setMidiInputs] = useState<{ id: string; name: string }[]>([]);
   const [midiInputId, setMidiInputId] = useState<string>('');
@@ -346,6 +350,49 @@ export default function MappingEditor({
   const primary = allZoneRefs.find((z) => selectedKeys.has(z.key)) ?? null;
   const selectedRefs = allZoneRefs.filter((z) => selectedKeys.has(z.key));
   const waveZone = allZoneRefs.find((z) => z.key === waveZoneKey) ?? null;
+
+  /** Conjuntos de camadas de velocity: zonas que compartilham o MESMO grupo
+   *  e a MESMA faixa de teclas. Cada conjunto é uma "pilha" de amostras que
+   *  se dividem por velocity (ex.: piano com 4 dinâmicas em cada região).
+   *  Só conjuntos com 2+ zonas aparecem no editor de divisórias. */
+  const splitSets: VelocitySplitSet[] = useMemo(() => {
+    const buckets = new Map<string, ZoneRef[]>();
+    zoneRefs.forEach((r) => {
+      const k = `${r.groupIdx}::${r.zone.loKey}::${r.zone.hiKey}`;
+      buckets.set(k, [...(buckets.get(k) ?? []), r]);
+    });
+    return [...buckets.entries()]
+      .filter(([, refs]) => refs.length >= 2)
+      .map(([k, refs]) => {
+        const sorted = [...refs].sort((a, b) => a.zone.loVel - b.zone.loVel || a.zone.loKey - b.zone.loKey);
+        return {
+          key: k,
+          label: `${sorted[0].group.name} · ${noteLabel(sorted[0].zone.loKey)}–${noteLabel(sorted[0].zone.hiKey)} (${sorted.length} amostras)`,
+          zones: sorted.map((r) => ({
+            key: r.key,
+            sampleId: r.zone.sampleId,
+            loVel: r.zone.loVel,
+            hiVel: r.zone.hiVel,
+            loKey: r.zone.loKey,
+            hiKey: r.zone.hiKey,
+            groupIdx: r.groupIdx,
+            groupName: r.group.name,
+          })),
+        };
+      })
+      .sort((a, b) => b.zones.length - a.zones.length || a.label.localeCompare(b.label));
+  }, [zoneRefs]);
+
+  const defaultSplitSetKey = useMemo(() => {
+    const withSelection = splitSets.find((s) => s.zones.some((z) => selectedKeys.has(z.key)));
+    return withSelection?.key ?? splitSets[0]?.key ?? null;
+  }, [splitSets, selectedKeys]);
+
+  function applySplitPatches(patches: VelocitySplitPatch[]) {
+    const map = new Map<string, Partial<MrqZone>>();
+    patches.forEach((p) => map.set(p.key, { loVel: p.loVel, hiVel: p.hiVel }));
+    applyPatches(map, false);
+  }
 
   function notify(msg: string) {
     setNotice(msg);
@@ -545,6 +592,12 @@ export default function MappingEditor({
 
   function runTool(id: string) {
     setMenuOpen(false);
+    if (id === 'vel-split') {
+      if (splitSets.length === 0) { notify('Este instrumento não tem 2+ amostras na mesma faixa de teclas para dividir por velocity.'); return; }
+      setSplitSetKey(defaultSplitSetKey);
+      setSplitOpen(true);
+      return;
+    }
     const targets = toolTargets();
     if (targets.length === 0) {
       notify('Selecione ao menos uma zona.');
@@ -933,6 +986,7 @@ export default function MappingEditor({
                 <MenuItem id="vel-spread" label="Auto-Spread faixas de velocity" />
                 <MenuItem id="key-resolve" label="Resolver sobreposições de tecla" />
                 <MenuItem id="vel-resolve" label="Resolver sobreposições de velocity" />
+                <MenuItem id="vel-split" label="Abrir divisórias de Velocity…" hint="Barra com alças arrastáveis 0–127 ligada às zonas reais" />
                 <div className="zm-menu-group">OPÇÕES / LOTE</div>
                 <MenuItem id="auto-move-root" label="Auto Move Root Key" active={autoMoveRoot} hint="Ao mover a zona, a nota-raiz acompanha" />
                 <MenuItem id="root-lo" label="Mover root para borda grave" />
@@ -965,6 +1019,15 @@ export default function MappingEditor({
           <ToolButton active={midiTool === 'vel'} onClick={() => { setMidiTool(midiTool === 'vel' ? null : 'vel'); setMidiPending([]); }} title="Set Velocity Range via MIDI — toque duas notas; as velocities viram os limites" icon={<ArrowUpDown size={13} />}>Vel via MIDI</ToolButton>
           <ToolButton active={lockZones} onClick={() => setLockZones((v) => !v)} title="Lock Zones — protege contra arrastes na grade" icon={lockZones ? <Lock size={13} /> : <Unlock size={13} />}>Lock</ToolButton>
           <ToolButton active={listView} onClick={() => setListView((v) => !v)} title="List View — planilha de zonas" icon={listView ? <Music2 size={13} /> : <List size={13} />}>{listView ? 'Grid View' : 'List View'}</ToolButton>
+          <ToolButton
+            active={splitOpen}
+            onClick={() => {
+              if (splitOpen) setSplitOpen(false);
+              else { setSplitSetKey(defaultSplitSetKey); setSplitOpen(true); }
+            }}
+            title="Divisórias de Velocity — arraste com o mouse para posicionar cada amostra entre 0 e 127"
+            icon={<AlignVerticalDistributeCenter size={13} />}
+          >Divisórias de Velocity</ToolButton>
           <span className="zm-strip-sep" />
           <div className="zm-midi-box">
             <Radio size={12} className={midiReady ? 'zm-midi-on' : ''} />
@@ -1024,6 +1087,28 @@ export default function MappingEditor({
           <span>{persistNote}</span>
           <span className="zm-banner-extra">X-Fades são marcadores visuais (o .mrq não tem esse campo). Pré-escuta real exige o .mrq convertido ou arquivo de áudio de origem.</span>
         </div>
+
+        {/* ---------- divisórias de velocity (barra arrastável 0–127) ---------- */}
+        {splitOpen && (splitSets.length > 0 ? (
+          <VelocitySplitEditor
+            sets={splitSets}
+            activeSetKey={splitSetKey ?? defaultSplitSetKey}
+            onActiveSetChange={(k) => setSplitSetKey(k)}
+            applyAll={splitApplyAll}
+            onApplyAllChange={setSplitApplyAll}
+            selectedKeys={selectedKeys}
+            onBeginEdit={pushHistory}
+            onApply={applySplitPatches}
+            onSelectZone={(k) => selectZones([k])}
+            onOpenWave={(k) => { setWaveZoneKey(k); notify('Forma de onda aberta abaixo.'); }}
+            onClose={() => setSplitOpen(false)}
+          />
+        ) : (
+          <div className="vse-empty">
+            <Info size={13} /> Nenhum conjunto com 2+ amostras na mesma faixa de teclas. As divisórias de velocity aparecem quando há camadas empilhadas (ex.: piano com várias dinâmicas por nota).
+            <button className="zm-close" onClick={() => setSplitOpen(false)}><X size={14} /></button>
+          </div>
+        ))}
 
         {/* ---------- corpo ---------- */}
         <div className="zm-body">
