@@ -1420,6 +1420,60 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .as-device-error { display: flex; align-items: flex-start; gap: 6px; margin-top: 8px; padding: 6px 8px; border: 1px solid #5c2a2a; border-radius: var(--radius-sm); background: #2a1414; color: #ffb4b4; font-size: 11px; line-height: 1.4; }
 .as-device-error svg { flex: none; margin-top: 1px; color: #e0b84a; }
 
+/* Assistente em passos (ver AutoSamplerDialog.tsx) — barra de status sempre
+   visível no topo: passos clicáveis + nota atual + VU L/R. */
+.as-statusbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px 0; flex-wrap: wrap; }
+.as-steps { display: flex; gap: 4px; }
+.as-step { display: flex; align-items: center; gap: 6px; background: transparent; border: 1px solid var(--border); color: var(--text-2); padding: 5px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.as-step:hover:not(:disabled) { color: var(--text-0); border-color: var(--text-2); }
+.as-step:disabled { cursor: not-allowed; opacity: .6; }
+.as-step.active { color: var(--mrq-cyan); border-color: var(--mrq-cyan-dim); background: color-mix(in srgb, var(--mrq-cyan) 12%, transparent); }
+.as-step.done { color: #3ecf8e; border-color: #123a2e; }
+.as-step-num { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: var(--bg-2); font-size: 10px; }
+.as-step.active .as-step-num { background: var(--mrq-cyan); color: #04121a; }
+.as-step.done .as-step-num { background: #123a2e; color: #3ecf8e; }
+.as-statusbar-right { display: flex; align-items: center; gap: 10px; min-width: 220px; }
+.as-current-note { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--mrq-cyan); }
+.as-progress { padding: 8px 20px 0; }
+.as-progress-track { height: 6px; border-radius: 3px; background: #1b1e24; overflow: hidden; }
+.as-progress-fill { height: 100%; background: var(--mrq-cyan); transition: width 200ms linear; }
+.as-progress-label { display: block; margin-top: 4px; font-size: 11px; color: var(--text-2); }
+.as-step-panel { display: flex; flex-direction: column; gap: 12px; }
+.as-step-intro { margin: 0; font-size: 12.5px; color: var(--text-1); line-height: 1.5; }
+.as-hint { margin: 0; font-size: 11px; color: var(--text-2); line-height: 1.4; }
+.as-checklist { display: flex; flex-direction: column; gap: 4px; }
+.as-check-item { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-2); }
+.as-check-item.done { color: #3ecf8e; }
+.as-check-item svg { flex: none; }
+.as-check-hint { color: var(--text-2); font-size: 11px; }
+.as-presets { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.as-preset { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 8px 10px; cursor: pointer; color: var(--text-0); }
+.as-preset:hover:not(:disabled) { border-color: var(--mrq-cyan-dim); }
+.as-preset:disabled { opacity: .5; cursor: not-allowed; }
+.as-preset strong { font-size: 12.5px; }
+.as-preset span { font-size: 11px; color: var(--text-2); }
+.as-note-name { font-size: 11px; color: var(--mrq-cyan); font-weight: 700; min-width: 34px; }
+.as-estimate { display: flex; flex-direction: column; gap: 5px; }
+.as-estimate > div { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--text-2); }
+.as-estimate strong { color: var(--text-0); font-size: 12.5px; }
+.as-check-label { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-1); cursor: pointer; }
+.as-check-label input { accent-color: var(--mrq-cyan); }
+.as-test-ok { font-size: 11px; color: #3ecf8e; }
+.as-results-list { display: flex; flex-wrap: wrap; gap: 5px; max-height: 140px; overflow-y: auto; }
+.as-result-item { display: flex; align-items: center; gap: 6px; font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid #123a2e; background: #0d1f18; color: #3ecf8e; }
+.as-result-item.silent { border-color: #5c2a2a; background: #2a1414; color: #ff8a8a; }
+.as-result-note { font-weight: 700; }
+.as-result-peak { color: var(--text-2); font-size: 10px; }
+.as-recapture { display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.as-result-ok { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border: 1px solid #123a2e; border-radius: var(--radius-sm); background: #0d1f18; color: #3ecf8e; font-size: 12px; line-height: 1.4; }
+.as-footer-actions { display: flex; align-items: center; gap: 8px; }
+
+/* Cores de status por nota no teclado (ver SampleNoteRangeKeyboard.tsx). */
+.as-kb-white-ok { fill: #2f9e6e; }
+.as-kb-white-silent { fill: #c94f4f; }
+.as-kb-black-ok { fill: #1f7a52; }
+.as-kb-black-silent { fill: #a03a3a; }
+
 /* Teclado visual "Sample Note Range" (ver SampleNoteRangeKeyboard.tsx). */
 .as-keyboard-section h4 { font-weight: 500; font-size: 11.5px; color: var(--text-2); white-space: normal; }
 .as-keyboard-wrap { width: 100%; }

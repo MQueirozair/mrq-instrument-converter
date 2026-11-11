@@ -75,42 +75,60 @@ ver limitação de round robin abaixo).
 
 ## Uso
 
-1. Abra "Auto Sampler" na tela do Conversor de Instrumentos.
-2. Escolha a porta MIDI de saída e o dispositivo de entrada de áudio nos
-   campos correspondentes (populados automaticamente a partir dos drivers
-   instalados no passo anterior). A opção **"Padrão do sistema"** (sempre
-   disponível no topo da lista, igual ao seletor de saída de áudio em
-   Configurações) não trava num id de dispositivo específico — usa sempre o
-   que estiver configurado como entrada padrão do sistema operacional no
-   momento da gravação. É a opção mais robusta se o driver de loopback
+A tela é um assistente em 4 passos (estilo "Project Wizard" do SampleRobot),
+com uma barra de status sempre visível no topo (passos + nota atual + VU
+L/R):
+
+1. **Conexão** — escolha a porta MIDI de saída e o dispositivo de entrada de
+   áudio (populados automaticamente a partir dos drivers instalados no
+   passo anterior). A opção **"Padrão do sistema"** (sempre disponível no
+   topo da lista, igual ao seletor de saída de áudio em Configurações) não
+   trava num id de dispositivo específico — usa sempre o que estiver
+   configurado como entrada padrão do sistema operacional no momento da
+   gravação. É a opção mais robusta se o driver de loopback
    (BlackHole/VB-Audio Virtual Cable/monitor do PulseAudio) estiver
    configurado como entrada padrão do SO; escolha um dispositivo nomeado
    específico só se precisar gravar de uma entrada que NÃO seja a padrão.
-3. Configure faixa de notas, intervalo de amostragem, sustain/release,
-   camadas de velocity, round robin, auto loop e ganho de entrada — os
-   mesmos campos do Auto Sampler do Logic Pro.
-   - **Teclado "Sample Note Range"**: clique em qualquer tecla pra ouvir o
-     Kontakt de verdade por MIDI (sem gravar nada); arraste as pontas da
-     barra azul acima do teclado pra ajustar Range Start/Range End (os
-     mesmos valores dos dois dropdowns, só uma forma visual alternativa de
-     mexer neles). Teclas azuis = amostradas de verdade; cinza-claro = dentro
-     da faixa mas preenchidas por interpolação (não têm captura própria);
-     cinza-escuro = fora da faixa.
-   - **Velocity Response "Custom"**: com mais de 1 camada de velocity,
-     aparece um gráfico com uma divisória arrastável entre cada camada —
-     arrastar qualquer uma troca automaticamente a resposta pra "Custom" e
-     passa a usar esses pontos exatos (em vez de uma curva linear/exp/log).
+   - **Checklist de setup**: mostra o que falta (MIDI / áudio / nível) antes
+     de deixar avançar.
+   - **Botões de teste**: "Testar MIDI" toca um C4 de verdade no instrumento;
+     "Testar áudio" orienta a tocar uma nota e observar o VU L/R.
    - **Medidor de nível L/R**: assim que um dispositivo de entrada é
      escolhido, dois medidores de barra mostram o nível de áudio chegando
      de verdade (já com o Input Gain aplicado) — evita ajustar o ganho "no
      escuro". O medidor usa seu PRÓPRIO stream de monitoramento (não o da
-     gravação) e é desligado automaticamente assim que "Sample" começa, pra
-     não disputar o dispositivo de entrada com a captura de verdade.
-4. Escolha se quer gerar `.mrq`, SF2/SF3, ou os dois (marcados por padrão).
-5. Clique "Sample". O app toca e grava cada nota automaticamente — o
-   progresso aparece no rodapé do modal. "Cancelar" interrompe a qualquer
-   momento (nunca espera o sustain/release inteiro da nota atual).
-6. Ao final, o `.mrq` (se gerado) entra automaticamente na fila do
+     gravação) e é desligado automaticamente assim que a captura começa, pra
+     não disputar o dispositivo de entrada com a captura de verdade (exceto no
+     loopback nativo, onde compartilha a mesma sessão Rust e continua
+     medindo durante a gravação).
+2. **Teclado** — escolha um **preset** (Piano/Teclado, Pads/Sustained,
+   Percussão/One-shot, Cromático rápido) ou ajuste a faixa de notas.
+   - **Teclado "Sample Note Range"**: clique em qualquer tecla pra ouvir o
+     Kontakt de verdade por MIDI (sem gravar nada); arraste as pontas da
+     barra azul acima do teclado pra ajustar Range Start/Range End.
+     Teclas azuis = amostradas de verdade; cinza-claro = dentro da faixa mas
+     preenchidas por interpolação (não têm captura própria); cinza-escuro =
+     fora da faixa. **Depois de uma captura**, as teclas mudam de cor pelo
+     resultado: **verde** = gravada OK, **vermelho** = silenciosa.
+   - **Estimativa**: notas, capturas totais, tempo e tamanho aproximado
+     antes de começar.
+3. **Som** — camadas de velocity, round robin, sustain/release, one-shot e
+   auto loop (os mesmos campos do Auto Sampler do Logic Pro).
+   - **Velocity Response "Custom"**: com mais de 1 camada de velocity,
+     aparece um gráfico com uma divisória arrastável entre cada camada —
+     arrastar qualquer uma troca automaticamente a resposta pra "Custom" e
+     passa a usar esses pontos exatos (em vez de uma curva linear/exp/log).
+4. **Captura** — nome do instrumento e formatos de saída (`.mrq` e/ou
+   SF2/SF3, marcados por padrão). Clique "Iniciar captura": o app toca e
+   grava cada nota automaticamente, com barra de progresso e a nota atual
+   no topo. "Cancelar" interrompe a qualquer momento (nunca espera o
+   sustain/release inteiro da nota atual).
+   - **Resultado por nota**: lista cada captura com status (OK/silenciosa) e
+     pico em dB.
+   - **Recapturar só as ruins**: se alguma nota ficou silenciosa, o botão
+     "Recapturar só as ruins" regrava apenas essas notas, sem regravar tudo
+     (o arquivo novo vai conter só as notas recapturadas).
+5. Ao final, o `.mrq` (se gerado) entra automaticamente na fila do
    conversor pra inspeção/pré-escuta; o caminho do `.sf2` (se gerado) é
    reportado por um aviso.
 

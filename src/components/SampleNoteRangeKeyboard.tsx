@@ -91,11 +91,14 @@ interface Props {
   onChangeRange: (start: number, end: number) => void;
   onPreviewNote?: (note: number) => void;
   disabled?: boolean;
+  /** Estado de cada nota já capturada — 'ok' (verde) ou 'silent' (vermelho).
+   *  Notas sem entrada aqui usam a cor normal da faixa (azul/cinza). */
+  noteStatus?: Map<number, 'ok' | 'silent'>;
 }
 
 type DragTarget = 'start' | 'end' | 'move' | null;
 
-export default function SampleNoteRangeKeyboard({ rangeStartNote, rangeEndNote, sampleEverySemitones, onChangeRange, onPreviewNote, disabled }: Props) {
+export default function SampleNoteRangeKeyboard({ rangeStartNote, rangeEndNote, sampleEverySemitones, onChangeRange, onPreviewNote, disabled, noteStatus }: Props) {
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragTarget, setDragTarget] = useState<DragTarget>(null);
   const dragStartRef = useRef<{ xUnits: number; rangeStartNote: number; rangeEndNote: number } | null>(null);
@@ -198,7 +201,12 @@ export default function SampleNoteRangeKeyboard({ rangeStartNote, rangeEndNote, 
         {WHITE_KEYS.map((k) => {
           const inRange = k.note >= rangeStartNote && k.note <= rangeEndNote;
           const sampled = sampledSet.has(k.note);
-          const cls = !inRange ? 'as-kb-white-out' : sampled ? 'as-kb-white-sampled' : 'as-kb-white-in';
+          const status = noteStatus?.get(k.note);
+          const cls = status === 'ok'
+            ? 'as-kb-white-ok'
+            : status === 'silent'
+              ? 'as-kb-white-silent'
+              : !inRange ? 'as-kb-white-out' : sampled ? 'as-kb-white-sampled' : 'as-kb-white-in';
           return (
             <rect
               key={k.note}
@@ -218,7 +226,12 @@ export default function SampleNoteRangeKeyboard({ rangeStartNote, rangeEndNote, 
         {BLACK_KEYS.map((k) => {
           const inRange = k.note >= rangeStartNote && k.note <= rangeEndNote;
           const sampled = sampledSet.has(k.note);
-          const cls = !inRange ? 'as-kb-black-out' : sampled ? 'as-kb-black-sampled' : 'as-kb-black-in';
+          const status = noteStatus?.get(k.note);
+          const cls = status === 'ok'
+            ? 'as-kb-black-ok'
+            : status === 'silent'
+              ? 'as-kb-black-silent'
+              : !inRange ? 'as-kb-black-out' : sampled ? 'as-kb-black-sampled' : 'as-kb-black-in';
           return (
             <rect
               key={k.note}

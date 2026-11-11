@@ -50,6 +50,7 @@ import {
   findLoopPoints,
   generateAutoSamplerTasks,
   isCaptureSilent,
+  peakAmplitude,
   trimLeadingSilence,
   trimTrailingSilence,
   INTER_TASK_GAP_SECONDS,
@@ -294,15 +295,30 @@ export interface AutoSamplerRunOptions {
   audioInputDeviceId: string;
   inputGainDb: number;
   outputs: AutoSamplerOutputRequest;
+  /** Opcional — quando definido, captura SÓ as tarefas cujo id está neste conjunto (ex.: recapturar só as notas que ficaram ruins, sem regravar tudo). */
+  onlyTaskIds?: Set<string>;
 }
 
 export type AutoSamplerPhase = 'capturing' | 'building-mrq' | 'building-sf2';
+
+/** Estado de UMA captura concluída — usado pela UI pra colorir o teclado
+ *  (nota gravada OK vs. nota silenciosa) e pra montar a lista de notas que
+ *  precisam ser recapturadas. */
+export interface AutoSamplerCaptureOutcome {
+  taskId: string;
+  note: number;
+  silent: boolean;
+  /** Pico de amplitude (0..1) da captura — pra mostrar "nível" na lista de notas. */
+  peak: number;
+}
 
 export interface AutoSamplerProgress {
   done: number;
   total: number;
   currentTask: AutoSamplerTask;
   phase: AutoSamplerPhase;
+  /** Só presente quando `phase === 'capturing'` — o resultado da captura que acabou de terminar. */
+  lastOutcome?: AutoSamplerCaptureOutcome;
 }
 
 export interface AutoSamplerMrqOutput {
@@ -320,6 +336,9 @@ export interface AutoSamplerRunResult {
    *  MIDI; isso é o sinal indireto mais confiável de "a nota não tocou" ou
    *  "a entrada de áudio não está recebendo nada do Kontakt". */
   silentCaptureCount: number;
+  /** Resultado de cada captura desta execução — a UI usa pra colorir o
+   *  teclado (OK vs. silenciosa) e pra oferecer "recapturar só as ruins". */
+  outcomes: AutoSamplerCaptureOutcome[];
   mrq?: AutoSamplerMrqOutput;
   sf2Path?: string;
 }
@@ -402,19 +421,33 @@ export class AutoSamplerSession {
     if (!options.outputs.mrq && !options.outputs.sf2) {
       throw new Error('escolha pelo menos um formato de saída (.mrq e/ou .sf2) antes de começar.');
     }
-    const tasks = generateAutoSamplerTasks(options.config);
-    if (tasks.length === 0) throw new Error('nenhuma nota/velocity/round-robin gerado — confira a configuração.');
+    const allTasks = generateAutoSamplerTasks(options.config);
+    if (allTasks.length === 0) throw new Error('nenhuma nota/velocity/round-robin gerado — confira a configuração.');
+    // Recaptura parcial (só as notas ruins): captura só o subconjunto pedido,
+    // mas monta o instrumento com TODAS as tarefas — as que não foram
+    // recapturadas simplesmente não entram no arquivo final (o usuário
+    // normalmente quer gerar um .sf2/.mrq novo só com o que acabou de gravar).
+    const tasks = options.onlyTaskIds ? allTasks.filter((t) => options.onlyTaskIds!.has(t.id)) : allTasks;
+    if (tasks.length === 0) throw new Error('nenhuma tarefa selecionada pra capturar — confira a configuração.');
 
     await this.setupMidi(options.midiOutputId);
     await this.setupAudio(options.audioInputDeviceId);
 
     const captured = new Map<string, { interleaved: Float32Array; sampleRateHz: number; channels: number }>();
+    const outcomes: AutoSamplerCaptureOutcome[] = [];
     try {
       for (let i = 0; i < tasks.length; i += 1) {
         const task = tasks[i];
         const raw = await this.captureOneTask(task, options);
         captured.set(task.id, raw);
-        onProgress?.({ done: i + 1, total: tasks.length, currentTask: task, phase: 'capturing' });
+        const outcome: AutoSamplerCaptureOutcome = {
+          taskId: task.id,
+          note: task.note,
+          silent: isCaptureSilent(raw.interleaved),
+          peak: peakAmplitude(raw.interleaved),
+        };
+        outcomes.push(outcome);
+        onProgress?.({ done: i + 1, total: tasks.length, currentTask: task, phase: 'capturing', lastOutcome: outcome });
       }
     } finally {
       this.panicAllNotesOff(options.midiChannel);
@@ -447,7 +480,7 @@ export class AutoSamplerSession {
       if (isCaptureSilent(raw.interleaved)) silentCaptureCount += 1;
     }
 
-    const result: AutoSamplerRunResult = { capturedCount: captured.size, silentCaptureCount };
+    const result: AutoSamplerRunResult = { capturedCount: captured.size, silentCaptureCount, outcomes };
     const lastTask = tasks[tasks.length - 1];
 
     if (options.outputs.mrq) {
