@@ -386,3 +386,14 @@ primeira abertura o macOS pede confirmação ("desenvolvedor não
 identificado") — basta clicar com o botão direito → Abrir → Abrir, ou
 rodar `xattr -cr` no Terminal. Instruções também nas notas do release e
 na Ajuda do app.
+
+## 12. Atualização v0.2.20 — macOS Intel + Apple Silicon em builds separados
+
+A pedido do usuário, o macOS deixou de ser um único binário universal e
+passou a gerar **dois instaladores separados** no CI:
+`aarch64-apple-darwin` (Apple Silicon M1/M2/M3/M4, DMG `*_aarch64.dmg`) e
+`x86_64-apple-darwin` (Intel, DMG `*_x86_64.dmg`). Ambos mantêm
+`minimumSystemVersion: 10.15` (macOS Catalina ou mais recente) e a
+assinatura ad-hoc da v0.2.19, com a verificação `codesign --verify` em
+cada job. O `latest.json` do updater passa a ter uma entrada por
+arquitetura (o updater escolhe a do Mac atual automaticamente).

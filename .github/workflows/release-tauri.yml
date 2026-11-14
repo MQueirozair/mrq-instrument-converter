@@ -17,6 +17,13 @@ on:
 jobs:
   # Windows e macOS: usa a action oficial, que builda, assina os artefatos
   # do updater e já publica tudo (incluindo o latest.json) no release.
+  #
+  # v0.2.20: macOS em DOIS builds separados (pedido do usuário) em vez do
+  # binário universal único:
+  #   - `aarch64-apple-darwin` → Apple Silicon (M1/M2/M3/M4) — DMG `*_aarch64.dmg`
+  #   - `x86_64-apple-darwin`  → Intel (incl. MacBook Pro com macOS 10.15
+  #     Catalina) — DMG `*_x86_64.dmg`
+  # Ambos com `minimumSystemVersion: 10.15` no tauri.conf.json (Catalina+).
   release:
     permissions:
       contents: write
@@ -25,7 +32,9 @@ jobs:
       matrix:
         include:
           - platform: 'macos-15'
-            args: '--target universal-apple-darwin'
+            args: '--target aarch64-apple-darwin'
+          - platform: 'macos-15'
+            args: '--target x86_64-apple-darwin'
           - platform: 'windows-latest'
             args: ''
     runs-on: ${{ matrix.platform }}
@@ -72,34 +81,38 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'MRQ Instrument Converter v__VERSION__'
           releaseBody: |
-            ## Nesta versão (v0.2.19)
+            ## Nesta versão (v0.2.20)
 
-            - **Correção da instalação no macOS (`.dmg`):** o app agora é
-              gerado com **assinatura ad-hoc de código**. Antes, o
-              Gatekeeper do macOS bloqueava o app baixado com a mensagem
-              _"MRQ Instrument Converter está danificado e não pode ser
-              aberto"_ — agora ele abre normalmente (na primeira vez, o
-              macOS pede uma confirmação — ver instruções abaixo).
+            - **macOS em dois instaladores separados (pedido dos usuários):**
+              agora há um `.dmg` para cada arquitetura —
+              `*_x86_64.dmg` para **Mac Intel** (incluindo MacBook Pro com
+              **macOS 10.15 Catalina**) e `*_aarch64.dmg` para **Apple
+              Silicon (M1/M2/M3/M4)**. Baixe o da sua máquina.
+            - **Instalação no macOS sem o erro "danificado" (v0.2.19):** o
+              app é gerado com **assinatura ad-hoc de código** — o
+              Gatekeeper não bloqueia mais como "danificado" (na primeira
+              abertura o macOS pede uma confirmação — ver abaixo).
             - **Exportação SF2 sem travamento (v0.2.18):** escrita PCM em
               bloco, extração de amostras em lote com barra de progresso
-              real ("128/512 amostras") e gravação em base64 — bibliotecas
-              grandes (pianos multisample) exportam em segundos/minutos em
-              vez de girar para sempre.
+              real ("128/512 amostras") e gravação em base64.
 
             ### Como instalar no macOS (primeira vez)
 
-            1. Abra o arquivo `.dmg` baixado e arraste
-               **MRQ Instrument Converter** para a pasta **Aplicativos**.
-            2. Na **primeira abertura**, o macOS mostra um aviso de que o
+            1. Baixe o `.dmg` da **sua arquitetura**:
+               - Mac **Intel** → `MRQ.Instrument.Converter_*_x86_64.dmg`
+               - Mac **M1/M2/M3/M4** → `MRQ.Instrument.Converter_*_aarch64.dmg`
+            2. Abra o `.dmg` e arraste **MRQ Instrument Converter** para a
+               pasta **Aplicativos**.
+            3. Na **primeira abertura**, o macOS mostra um aviso de que o
                app é de um desenvolvedor não identificado. Clique em
                **Cancelar**, depois **clique com o botão direito** (ou
                `Ctrl` + clique) no app em Aplicativos → **Abrir** →
                **Abrir** de novo. Depois disso ele abre direto.
-            3. Alternativa pelo Terminal (se preferir):
+            4. Alternativa pelo Terminal (se preferir):
                `xattr -cr "/Applications/MRQ Instrument Converter.app"`
 
-            **Requisitos:** macOS 10.15 (Catalina) ou mais recente, Windows
-            7+, ou Linux com WebKitGTK.
+            **Requisitos:** macOS **10.15 (Catalina)** ou mais recente
+            (Intel e Apple Silicon), Windows 7+, ou Linux com WebKitGTK.
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
@@ -113,7 +126,7 @@ jobs:
       - name: verificar assinatura ad-hoc do app (macOS)
         if: matrix.platform == 'macos-15'
         run: |
-          APP=$(find src-tauri/target -maxdepth 5 -name "*.app" -type d | head -1)
+          APP=$(find src-tauri/target -maxdepth 6 -name "*.app" -type d | head -1)
           if [ -z "$APP" ]; then echo "::error::nenhum .app encontrado pra verificar"; exit 1; fi
           echo "App: $APP"
           codesign --verify --deep --strict --verbose=2 "$APP"

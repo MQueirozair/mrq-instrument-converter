@@ -478,6 +478,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Dispositivo salvo sumiu ao reiniciar</b></td><td>Hardware desconectado ou nova sessão de permissão do sistema.</td><td>O nome continua no rascunho; reconecte, atualize a lista e reconfirme a permissão de áudio no macOS/Linux.</td></tr>
               <tr><td><b>Quero recomeçar do zero</b></td><td>Rascunho antigo continua salvo de propósito.</td><td>Use Limpar tudo / Voltar do zero e confirme. Os arquivos já exportados não são apagados.</td></tr>
               <tr><td><b>macOS: “está danificado e não pode ser aberto” ao instalar o .dmg</b></td><td>App sem assinatura de código bloqueado pelo Gatekeeper (versões até v0.2.18).</td><td>Atualize para <b>v0.2.19+</b> (assinatura ad-hoc). Na primeira abertura, clique com o botão direito no app em Aplicativos → <b>Abrir</b> → <b>Abrir</b>. Ou rode no Terminal: <code>xattr -cr "/Applications/MRQ Instrument Converter.app"</code>.</td></tr>
+              <tr><td><b>Qual .dmg baixar no Mac?</b></td><td>Mac Intel e Apple Silicon (M1/M2/M3/M4) precisam de instaladores diferentes.</td><td>Desde a <b>v0.2.20</b> há dois .dmgs: <code>*_x86_64.dmg</code> para <b>Mac Intel</b> (inclui MacBook Pro com <b>macOS 10.15 Catalina</b>) e <code>*_aarch64.dmg</code> para <b>Apple Silicon</b>. Baixe o da sua máquina — o outro não abre.</td></tr>
             </tbody>
           </table>
         </div>
