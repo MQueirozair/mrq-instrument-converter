@@ -42,7 +42,7 @@ async function compileToNode(entry) {
   return import(`file://${outfile}`);
 }
 
-const { buildMultiPresetSf2Binary } = await compileToNode('src/audio/rack/sf2Export.ts');
+const { buildMultiPresetSf2Binary, float32ToInt16Interleaved } = await compileToNode('src/audio/rack/sf2Export.ts');
 
 let passed = 0;
 function check(name, fn) {
@@ -73,8 +73,8 @@ const pcmB = sineMono(FREQ_B, 1.0);
 
 const sf2Bytes = buildMultiPresetSf2Binary(
   [
-    { name: 'PresetA', program: 0, bank: 0, zones: [{ label: 'A', rootNote: NOTE, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127, interleaved: pcmA, sampleRateHz: SR, channels: 1 }] },
-    { name: 'PresetB', program: 1, bank: 0, zones: [{ label: 'B', rootNote: NOTE, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127, interleaved: pcmB, sampleRateHz: SR, channels: 1 }] },
+    { name: 'PresetA', program: 0, bank: 0, zones: [{ label: 'A', rootNote: NOTE, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127, pcmInt16: float32ToInt16Interleaved(pcmA), sampleRateHz: SR, channels: 1 }] },
+    { name: 'PresetB', program: 1, bank: 0, zones: [{ label: 'B', rootNote: NOTE, loKey: 0, hiKey: 127, loVel: 0, hiVel: 127, pcmInt16: float32ToInt16Interleaved(pcmB), sampleRateHz: SR, channels: 1 }] },
   ],
   'Multi Preset Test'
 );

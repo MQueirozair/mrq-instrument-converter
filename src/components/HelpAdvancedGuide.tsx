@@ -319,6 +319,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Não foi possível analisar o .mrq</b></td><td>O item era marcado como erro antes de qualquer leitura.</td><td><code>mrq_read_metadata</code> carrega instrumento + índice de amostras e marca o próprio arquivo como já convertido.</td></tr>
               <tr><td><b>Falha ao exportar SF2: decodeError … invalid block size, must be at least 16</b></td><td>Amostra com último bloco FLAC de 1–15 frames: o encoder antigo escrevia esse tamanho como <code>min_block_size</code>, e o <code>claxon</code> exige mínimo 16.</td><td>Novos arquivos declaram bloco fixo <code>min = max = 4096</code>; arquivos antigos são reparados em memória antes de decodificar, sem alterar hash ou áudio.</td></tr>
               <tr><td><b>Converter para .mrq num arquivo que já é .mrq</b></td><td>Não fazia sentido recodificar.</td><td>Virou <b>Salvar/copiar .mrq</b>: cópia em streaming no Rust, sem recodificar FLAC e com proteção contra origem = destino.</td></tr>
+              <tr><td><b>Exportar .sf2 fica só girando e nunca termina</b></td><td>Biblioteca grande (piano multisample): o escritor antigo alocava um buffer por sample point e extraía cada amostra com um invoke separado — dezenas de milhões de frames travavam o app.</td><td>Escrita PCM em bloco, extração em lote com <b>barra de progresso</b> ("128/512 amostras") e tempo decorrido. Se a barra está andando, está trabalhando — não feche no meio.</td></tr>
             </tbody>
           </table>
         </div>
@@ -371,6 +372,12 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
           <b>SF3 sem compressão real:</b> o conversor ainda não embute um codificador Ogg Vorbis. O <code>.sf3</code>{' '}
           toca normalmente em players compatíveis com SF2/SF3, mas tem o mesmo tamanho de um <code>.sf2</code>. O aviso
           aparece antes do salvamento para você decidir com informação completa.
+        </Note>
+        <Note kind="tip">
+          <b>Progresso visível (v0.2.18):</b> ao exportar <code>.sf2</code>/<code>.sf3</code>, a faixa mostra{' '}
+          <b>"Exportando .sf2… 128/512 amostras (há 12s)"</b> com barra de progresso. Em bibliotecas grandes
+          (pianos multisample com centenas de amostras), a exportação pode levar alguns minutos — enquanto a
+          barra anda, o app está trabalhando. Não feche a janela no meio.
         </Note>
         <ul>
           <li>Se você editou o mapeamento, a conversão temporária usa as edições e lê o modelo resultante de verdade — o SoundFont não sai de uma visualização desatualizada.</li>

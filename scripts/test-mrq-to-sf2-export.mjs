@@ -59,12 +59,23 @@ fs.writeFileSync(
   // test-mrq-format-invoke-serialization.mjs: o require() de dentro do bundle da esbuild e o
   // import() feito direto pelo Node abaixo acabam sendo DUAS instâncias de módulo diferentes.
   globalThis.__mrqToSf2SpyCalls = 0;
+  globalThis.__mrqToSf2SpySampleIds = [];
   function invoke(cmd, args) {
     globalThis.__mrqToSf2SpyCalls += 1;
     if (cmd === 'mrq_extract_sample') {
       const sample = SAMPLES[args.sampleId];
       if (!sample) return Promise.reject(new Error('sampleId desconhecido no espião: ' + args.sampleId));
       return Promise.resolve(sample);
+    }
+    if (cmd === 'mrq_extract_samples') {
+      // v0.2.18: extração em LOTE — devolve um array na mesma ordem pedida.
+      globalThis.__mrqToSf2SpySampleIds.push(...args.sampleIds);
+      const out = args.sampleIds.map((id) => {
+        const sample = SAMPLES[id];
+        if (!sample) throw new Error('sampleId desconhecido no espião: ' + id);
+        return sample;
+      });
+      return Promise.resolve(out);
     }
     return Promise.reject(new Error('comando inesperado no espião: ' + cmd));
   }
@@ -92,6 +103,9 @@ async function compileToNode(entry) {
 
 const { buildSf2FromMrqInstrument, mrqInstrumentHasExportableZones } = await compileToNode('src/audio/rack/mrqToSf2Export.ts');
 const { getCallCount } = await import(`file://${spyModulePath}`);
+function getRequestedSampleIds() {
+  return globalThis.__mrqToSf2SpySampleIds ?? [];
+}
 
 let passed = 0;
 async function check(name, fn) {
@@ -154,17 +168,28 @@ await check('mrqInstrumentHasExportableZones: false pra undefined e pra instrume
 });
 
 let sf2Bytes;
+const progressCalls = [];
 await check('buildSf2FromMrqInstrument monta um RIFF/sfbk válido a partir de um modelo com 2 presets', async () => {
-  sf2Bytes = await buildSf2FromMrqInstrument('/fake/path.mrq', instrument);
+  sf2Bytes = await buildSf2FromMrqInstrument('/fake/path.mrq', instrument, {
+    onProgress: (done, total) => progressCalls.push([done, total]),
+  });
   assert.equal(String.fromCharCode(...sf2Bytes.slice(0, 4)), 'RIFF');
   assert.equal(String.fromCharCode(...sf2Bytes.slice(8, 12)), 'sfbk');
   const declaredSize = new DataView(sf2Bytes.buffer, sf2Bytes.byteOffset).getUint32(4, true);
   assert.equal(declaredSize, sf2Bytes.length - 8);
 });
 
-await check('mrq_extract_sample foi chamado só 3x (sampleA 1x + sampleB 1x, reaproveitado nas 2 zonas do PresetB) — nunca 1x por ZONA', () => {
-  // 1 chamada pra sampleA (preset A, 1 zona) + 1 chamada pra sampleB (preset B, cacheada entre as 2 zonas que a usam) = 2.
-  assert.equal(getCallCount(), 2, `esperava 2 chamadas a mrq_extract_sample (dedupe por sampleId), recebeu ${getCallCount()}`);
+await check('extração em LOTE (v0.2.18): 1 chamada a mrq_extract_samples com sampleA+sampleB dedupados — nunca 1 invoke por zona', () => {
+  // sampleA 1x (preset A) + sampleB 1x (preset B, reaproveitado nas 2 zonas) = 2 ids únicos, num único lote.
+  assert.equal(getCallCount(), 1, `esperava 1 chamada em lote a mrq_extract_samples, recebeu ${getCallCount()}`);
+  assert.deepEqual([...getRequestedSampleIds()].sort(), ['sampleA', 'sampleB']);
+});
+
+await check('onProgress foi chamado com o total de amostras únicas (2) e terminou em done === total', () => {
+  assert.ok(progressCalls.length >= 1, 'onProgress deveria ter sido chamado pelo menos 1x');
+  const [lastDone, lastTotal] = progressCalls[progressCalls.length - 1];
+  assert.equal(lastTotal, 2, 'total deve ser o número de amostras ÚNICAS (sampleA+sampleB), não de zonas (3)');
+  assert.equal(lastDone, 2, 'a última chamada deve ter done === total (exportação completa)');
 });
 
 if (!hasFluidsynth()) {

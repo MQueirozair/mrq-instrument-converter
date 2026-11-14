@@ -142,3 +142,53 @@ least 16`. Eram dois bugs independentes:
 
 Limitação mantida: `.sf3` ainda é PCM sem compressão Vorbis; o aviso antes de
 salvar continua. A exportação SF2/SF3 continua apenas no Instrument Converter.
+
+## 10. v0.2.18 — fim do travamento ("fica só girando, não converte nada")
+
+**Sintoma relatado:** clicar em **Exportar .sf2** (e também converter
+SF2→MRQ em bibliotecas grandes) mostrava o spinner para sempre, sem
+terminar e sem nenhum progresso visível.
+
+**Causa raiz (exportação SF2):** `buildMultiPresetSf2Binary` escrevia o
+PCM no chunk `smpl` com um `ByteWriter.i16()` **por sample point** — cada
+chamada alocava um `Uint8Array(2)` e empurrava num array de partes.
+Medido antes da correção: 1M de frames estéreo (2M sample points)
+levavam 4,5s; 3M de frames estouravam a memória (processo morto). Um
+piano multisample real tem dezenas de milhões de frames — a exportação
+nunca terminava. Agravantes: cada zona disparava um `mrq_extract_sample`
+separado (centenas de invokes sequenciais, cada um reabrindo o `.mrq` e
+reparseando o JSON inteiro), todas as amostras eram retidas em Float32
+até o fim (dobro da memória), e a escrita do arquivo final serializava
+cada byte como número JSON (`Array.from(bytes)`).
+
+**Correção:**
+
+- `sf2Export.ts`: novo `ByteWriter.pushInt16Array` — o PCM inteiro de
+  cada amostra é escrito em **uma única alocação**. `Sf2ExportZone`
+  agora carrega `pcmInt16` (Int16 intercalado) em vez de Float32, com
+  `float32ToInt16Interleaved` exportado pra quem extrai o áudio
+  converter na hora e descartar o Float32 (metade da memória retida).
+  Medido depois: 5M de frames estéreo montam em ~110ms (antes: OOM).
+- `mrqToSf2Export.ts` + novo comando Rust `mrq_extract_samples`: as
+  amostras únicas são extraídas em **lotes** (metadados lidos uma vez
+  só no backend), com `onProgress(done, total)` a cada lote e cessão
+  do event loop entre lotes. A UI mostra **"Exportando .sf2…
+  128/512 amostras (há 12s)"** com barra de progresso, em vez de um
+  spinner cego.
+- `sf2.rs`/`npno.rs`: `convert_to_mrq` não reabre nem reparseia mais o
+  arquivo uma segunda vez (`inspect_loaded`/`inspect_entity`
+  reaproveitam o `SoundFont2`/`Entity` já carregado) — metade do tempo
+  e da memória na conversão SF2/NPNO→MRQ.
+- `save_binary_file` agora recebe blocos em **base64** (não mais
+  `number[]` JSON): payload ~4x menor e parse muito mais rápido em
+  SoundFonts de centenas de MB. `writeBinaryFileSafe` e
+  `tauriBridge.saveBinaryFile` codificam em base64.
+- Testes: novo `scripts/test-sf2-export-large.mjs` (4 casos: conversão
+  Int16 com limite, montagem de 5M de frames estéreo em < 5s, RIFF
+  válido e PCM conferido byte a byte no chunk `smpl`); o espião de
+  `test-mrq-to-sf2-export.mjs` agora cobre o lote `mrq_extract_samples`
+  e o callback `onProgress`.
+
+Limitação mantida: `.sf3` ainda é PCM sem compressão Vorbis; o aviso
+antes de salvar continua. A exportação SF2/SF3 continua apenas no
+Instrument Converter.

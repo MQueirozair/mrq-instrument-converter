@@ -235,7 +235,16 @@ fn load_soundfont(file: &mut File) -> Result<SoundFont2, ImportError> {
 pub fn inspect(path: &Path) -> Result<Sf2Inspection, ImportError> {
     let mut file = File::open(path)?;
     let sf2 = load_soundfont(&mut file)?;
+    Ok(inspect_loaded(&sf2))
+}
 
+/// Núcleo de `inspect` que recebe o `SoundFont2` JÁ carregado (v0.2.18) —
+/// `convert_to_mrq` já tinha carregado o arquivo pra extrair o áudio e
+/// chamava `inspect(path)` de novo, reabrindo e reparseando o SF2 inteiro
+/// uma segunda vez (o dobro de tempo e de memória num arquivo de vários
+/// GB, e a conversão parecia travada). Agora o parse estrutural reaproveita
+/// o `SoundFont2` já em memória.
+fn inspect_loaded(sf2: &SoundFont2) -> Sf2Inspection {
     let mut report = MrqCompatibilityReport::default();
 
     let has_valid_sm24 = match (&sf2.sample_data.smpl, &sf2.sample_data.sm24) {
@@ -304,7 +313,7 @@ pub fn inspect(path: &Path) -> Result<Sf2Inspection, ImportError> {
         midi: None,
     };
 
-    Ok(Sf2Inspection { instrument, compatibility: report, pending_samples })
+    Sf2Inspection { instrument, compatibility: report, pending_samples }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -751,7 +760,10 @@ pub fn convert_to_mrq(
     let mut file = File::open(source_path)?;
     let sf2 = load_soundfont(&mut file)?;
 
-    let inspection = inspect(source_path)?;
+    // v0.2.18: reaproveita o `SoundFont2` já carregado acima — antes isto
+    // chamava `inspect(source_path)`, que reabria e reparseava o arquivo
+    // inteiro uma segunda vez.
+    let inspection = inspect_loaded(&sf2);
     let mut report = inspection.compatibility;
 
     let session_id = writer::begin(builder_state, dest_path, inspection.instrument)?;

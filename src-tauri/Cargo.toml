@@ -44,6 +44,7 @@ reqwest = { version = "0.13", default-features = false, features = ["stream", "r
 flacenc = "0.5"      # codificador FLAC (Apache-2.0)
 claxon = "0.4"        # decodificador FLAC (Apache-2.0)
 sha2 = "0.10"         # SHA-256 (MIT OR Apache-2.0)
+base64 = "0.22"       # decodificação base64 dos blocos de `save_binary_file` (v0.2.18) — evita serializar cada byte como número JSON (lento em arquivos grandes). MIT OR Apache-2.0.
 tempfile = "3"        # escrita segura (arquivo temporário + rename atômico), MIT OR Apache-2.0
 # Fase 3 — importador SF2/SF3 (src/importers/sf2.rs), ambas puro Rust:
 soundfont = "0.1"    # parser binário SF2/SF3 completo (presets/instrumentos/

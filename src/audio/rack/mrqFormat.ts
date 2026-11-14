@@ -284,6 +284,16 @@ export function mrqExtractSample(path: string, sampleId: string): Promise<MrqDec
   return invoke('mrq_extract_sample', { path, sampleId });
 }
 
+/** Extrai VÁRIAS amostras numa única chamada (v0.2.18) — o backend lê os
+ *  metadados do `.mrq` uma vez só e decodifica cada amostra pedida. Usado
+ *  pela exportação SF2 do conversor (`mrqToSf2Export.ts`): chamar
+ *  `mrqExtractSample` uma vez por zona (centenas de invokes, cada um
+ *  reabrindo o arquivo e reparseando o JSON inteiro) fazia a exportação
+ *  parecer travada por minutos, sem nenhum progresso visível. */
+export function mrqExtractSamples(path: string, sampleIds: string[]): Promise<MrqDecodedSample[]> {
+  return invoke('mrq_extract_samples', { path, sampleIds });
+}
+
 export function mrqValidateIntegrity(path: string): Promise<MrqIntegrityReport> {
   return invoke('mrq_validate_integrity', { path });
 }

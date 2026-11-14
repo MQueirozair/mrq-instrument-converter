@@ -399,15 +399,19 @@ const api: MrqApi = {
         filters: MRQI_SAVE_FILTERS,
       });
       if (!path) return null;
-      // Vai como argumento JSON normal (number[]), não como "raw payload"
+      // Vai como argumento JSON normal (string base64), não como "raw payload"
       // binário do Tauri (invoke(cmd, uint8array)) — esse modo raw passa
       // metadados extras (como o caminho de destino) por cabeçalhos HTTP,
       // que não aceitam com segurança nomes de arquivo com acentuação (muito
-      // comuns aqui, ex. "Partitura Não-Violão.mrqi"). Pra um arquivo de
-      // instrumento de tamanho moderado, exportado manualmente de vez em
-      // quando (não é um caminho "quente"), o overhead de serializar como
-      // array JSON é aceitável; ver src-tauri/src/fsops.rs::save_binary_file.
-      await invoke('save_binary_file', { path, data: Array.from(opts.data) });
+      // comuns aqui, ex. "Partitura Não-Violão.mrqi"). v0.2.18: base64 em
+      // vez de number[] JSON (payload ~4x menor, parse muito mais rápido);
+      // ver src-tauri/src/fsops.rs::save_binary_file.
+      const CHUNK = 32 * 1024;
+      let binary = '';
+      for (let offset = 0; offset < opts.data.length; offset += CHUNK) {
+        binary += String.fromCharCode(...opts.data.subarray(offset, Math.min(offset + CHUNK, opts.data.length)));
+      }
+      await invoke('save_binary_file', { path, dataBase64: btoa(binary) });
       return path;
     },
     /** Lista os nomes (não os caminhos completos) de todas as entradas

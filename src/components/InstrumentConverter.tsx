@@ -135,6 +135,14 @@ interface QueueItem {
    *  andamento (ver exportItemToSoundFont) — só pra desabilitar o botão
    *  certo e mostrar o spinner nele, nunca os dois ao mesmo tempo. */
   exportingSoundFont?: 'sf2' | 'sf3';
+  /** Progresso real da exportação SF2/SF3 (v0.2.18): amostras únicas já
+   *  extraídas do `.mrq` de `total` — mostrado como "128/512 amostras" com
+   *  barra, em vez de um spinner cego que parecia travado. */
+  exportProgress?: { done: number; total: number };
+  /** `Date.now()` quando a conversão/exportação começou — pra mostrar o
+   *  tempo decorrido ("há 42s") e o usuário saber que está trabalhando,
+   *  não travado (v0.2.18). */
+  busyStartedAt?: number;
   /** Mapeamento editado pelo usuário no Editor de Mapeamento (botão
    *  "Editar mapeamento" na faixa de pré-visualização) — ver
    *  `MappingEditor.tsx`. Quando presente, `convertItem` passa isto como
@@ -161,6 +169,22 @@ function formatSupportsMappingEdits(item: QueueItem): boolean {
 
 function captureKindLabel(kind: 'kontakt-audio' | 'auto-sampler'): string {
   return kind === 'auto-sampler' ? 'Auto Sampler (Kontakt)' : 'Captura de áudio Kontakt';
+}
+
+/** Segundos inteiros desde `startedAt`, atualizando a cada segundo enquanto
+ *  `active` — usado pra mostrar "há 42s" durante conversão/exportação, pra
+ *  o usuário saber que está trabalhando (e não travado) mesmo quando o
+ *  backend não expõe progresso granular (v0.2.18). */
+function useElapsedSeconds(startedAt: number | undefined, active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active || startedAt == null) return;
+    setNow(Date.now());
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [active, startedAt]);
+  if (startedAt == null) return 0;
+  return Math.max(0, Math.floor((now - startedAt) / 1000));
 }
 
 /** Define de onde o Editor de Mapeamento tira o PCM real pra pré-escuta por
@@ -419,7 +443,7 @@ function InstrumentConverterInner() {
       return;
     }
     if (!destPath) return;
-    setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: 'converting', convertProgress: undefined } : q)));
+    setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: 'converting', convertProgress: undefined, busyStartedAt: Date.now() } : q)));
     try {
       const result = await convertAny(
         item.format,
@@ -442,6 +466,7 @@ function InstrumentConverterInner() {
                 convertedMetadata: metadata,
                 compatibility: result.compatibility,
                 unresolved: result.unresolved,
+                busyStartedAt: undefined,
               }
             : q
         )
@@ -450,7 +475,7 @@ function InstrumentConverterInner() {
     } catch (err) {
       logConverterError(`falha ao converter "${item.path}" (formato=${item.format})`, err);
       const e = formatConverterErrorMessage(err);
-      setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: 'convert-error', error: e } : q)));
+      setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, status: 'convert-error', error: e, busyStartedAt: undefined } : q)));
       pushToast(`Falha ao converter "${item.fileName}": ${e}`, 'error');
     }
   }
@@ -499,7 +524,7 @@ function InstrumentConverterInner() {
     }
     if (!destPath) return;
 
-    setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: ext } : q)));
+    setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: ext, exportProgress: undefined, busyStartedAt: Date.now() } : q)));
     let tempMrqPath: string | null = null;
     try {
       let mrqPath: string | null = item.convertedPath ?? null;
@@ -533,7 +558,11 @@ function InstrumentConverterInner() {
       if (!mrqPath || !exportInstrument) {
         throw new Error('não foi possível obter o instrumento convertido para montar o SoundFont.');
       }
-      const bytes = await buildSf2FromMrqInstrument(mrqPath, exportInstrument);
+      const bytes = await buildSf2FromMrqInstrument(mrqPath, exportInstrument, {
+        onProgress: (done, total) => {
+          setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportProgress: { done, total } } : q)));
+        },
+      });
       await writeBinaryFileSafe(destPath, bytes);
       pushToast(`"${basenameOf(destPath)}" exportado com sucesso.`);
     } catch (err) {
@@ -549,7 +578,7 @@ function InstrumentConverterInner() {
           logConverterError('falha ao remover .mrq temporário do exportador SoundFont', err);
         }
       }
-      setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: undefined } : q)));
+      setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: undefined, exportProgress: undefined, busyStartedAt: undefined } : q)));
     }
   }
 
@@ -987,7 +1016,39 @@ function PreviewStrip({
             Escolha qualquer um · .sf2/.sf3 salvam direto, sem precisar gerar .mrq antes
           </span>
         </div>
+        {/* v0.2.18: progresso REAL da exportação SF2/SF3 — antes era só um
+            spinner cego e numa biblioteca grande parecia travado pra sempre
+            ("fica só girando"). Agora mostra amostras extraídas/total com
+            barra + tempo decorrido. */}
+        {item.exportingSoundFont && (
+          <ExportProgressStrip item={item} />
+        )}
       </div>
+    </div>
+  );
+}
+
+/** Faixa de progresso da exportação `.sf2`/`.sf3` em andamento: barra +
+ *  "128/512 amostras" + tempo decorrido. Separada em componente próprio pra
+ *  o relógio de 1s (`useElapsedSeconds`) só existir enquanto exporta. */
+function ExportProgressStrip({ item }: { item: QueueItem }) {
+  const elapsed = useElapsedSeconds(item.busyStartedAt, Boolean(item.exportingSoundFont));
+  const progress = item.exportProgress;
+  const pct = progress && progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : null;
+  return (
+    <div className="converter-export-progress" role="status" aria-live="polite">
+      <Loader2 size={13} className="mrq-spin" />
+      <span>
+        Exportando .{item.exportingSoundFont}…
+        {progress ? ` ${progress.done}/${progress.total} amostras` : ' preparando…'}
+        {elapsed > 0 ? ` (há ${elapsed}s)` : ''}
+      </span>
+      {pct != null && (
+        <span className="converter-export-progress-bar" aria-hidden="true">
+          <span className="converter-export-progress-fill" style={{ width: `${pct}%` }} />
+        </span>
+      )}
+      {pct != null && <span>{pct}%</span>}
     </div>
   );
 }

@@ -2141,6 +2141,20 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .converter-format-choice[aria-pressed="true"] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .converter-format-choice:disabled { opacity: .42; cursor: not-allowed; box-shadow: none; }
 .converter-format-hint { flex-basis: 100%; color: #84e1ad; font-size: 9.5px; line-height: 1.35; }
+/* v0.2.18: faixa de progresso real da exportação SF2/SF3 (amostras + barra + tempo). */
+.converter-export-progress {
+  flex-basis: 100%; display: flex; align-items: center; gap: 8px;
+  color: var(--text-1); font-size: 11px; font-weight: 700;
+}
+.converter-export-progress-bar {
+  flex: 1 1 auto; min-width: 80px; height: 8px; border-radius: 999px;
+  background: #0c0f12; border: 1px solid var(--border); overflow: hidden;
+}
+.converter-export-progress-fill {
+  display: block; height: 100%; border-radius: 999px;
+  background: linear-gradient(90deg, var(--accent), #84e1ad);
+  transition: width .25s ease;
+}
 @media (max-width: 760px) {
   .converter-format-picker { width: 100%; }
   .converter-format-choice { flex: 1 1 auto; }

@@ -74,6 +74,16 @@ pub fn mrq_extract_sample(path: String, sample_id: String) -> Result<MrqDecodedS
     reader::extract_sample(&std::path::PathBuf::from(path), &sample_id)
 }
 
+/// Extrai e decodifica VÁRIAS amostras numa única chamada (v0.2.18) — os
+/// metadados do arquivo são lidos uma vez só no backend. Usado pela
+/// exportação SF2 do conversor, que precisa de todas as amostras de uma
+/// biblioteca grande; um invoke por amostra fazia a exportação parecer
+/// travada por minutos. A ordem da saída segue a ordem de `sample_ids`.
+#[tauri::command]
+pub fn mrq_extract_samples(path: String, sample_ids: Vec<String>) -> Result<Vec<MrqDecodedSample>, MrqError> {
+    reader::extract_samples(&std::path::PathBuf::from(path), &sample_ids)
+}
+
 /// Confere a integridade completa do arquivo (hash por amostra + hash
 /// global). Não falha por hash incorreto — isso vira dado no relatório.
 #[tauri::command]

@@ -140,13 +140,22 @@ fn load_entity(file: &mut File) -> Result<Entity, ImportError> {
 pub fn inspect(path: &Path) -> Result<NordInspection, ImportError> {
     let mut file = File::open(path)?;
     let entity = load_entity(&mut file)?;
+    inspect_entity(&entity)
+}
+
+/// Núcleo de `inspect` que recebe a `Entity` JÁ carregada (v0.2.18) —
+/// `convert_to_mrq` já tinha carregado o arquivo e chamava `inspect(path)`
+/// de novo, reabrindo e reparseando o contêiner inteiro uma segunda vez.
+/// Recebe por referência porque `convert_to_mrq` usa a entidade DEPOIS da
+/// inspeção (pra extrair o áudio de cada stroke/zona).
+fn inspect_entity(entity: &Entity) -> Result<NordInspection, ImportError> {
     match entity {
-        Entity::Piano(piano) => inspect_piano(&piano),
-        Entity::Sample(sample) => inspect_sample(&sample),
+        Entity::Piano(piano) => inspect_piano(piano),
+        Entity::Sample(sample) => inspect_sample(sample),
         other => Err(ImportError::InvalidNordFile {
             message: format!(
                 "o arquivo é um arquivo Nord válido, mas de um tipo fora do escopo deste importador (esperado: biblioteca de piano .npno ou amostra .nsmp/.nsmp3/.nsmp4; encontrado: {}).",
-                entity_kind_name(&other)
+                entity_kind_name(other)
             ),
         }),
     }
@@ -428,7 +437,9 @@ pub fn convert_to_mrq(
     let mut file = File::open(source_path)?;
     let entity = load_entity(&mut file)?;
 
-    let inspection = inspect(source_path)?;
+    // v0.2.18: reaproveita a `Entity` já carregada acima — antes isto
+    // chamava `inspect(source_path)`, reabrindo e reparseando o arquivo.
+    let inspection = inspect_entity(&entity)?;
     let mut report = inspection.compatibility;
 
     let session_id = writer::begin(builder_state, dest_path, inspection.instrument)?;

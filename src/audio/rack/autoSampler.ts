@@ -42,7 +42,7 @@ import {
   type MrqInstrumentModel,
   type MrqZone,
 } from './mrqFormat';
-import { buildSf2Binary, type Sf2ExportZone } from './sf2Export';
+import { buildSf2Binary, float32ToInt16Interleaved, type Sf2ExportZone } from './sf2Export';
 import {
   applyGainDb,
   bakeAutoLoop,
@@ -260,18 +260,34 @@ export async function openWindowsSoundSettings(): Promise<void> {
   await invoke('loopback_open_sound_settings');
 }
 
-/** Grava bytes arbitrários em disco via comando Rust (`save_binary_file`, em blocos de 4 MB), sem depender do escopo de `@tauri-apps/plugin-fs` no Windows nem estourar a serialização JSON em arquivos grandes (ex.: SoundFonts `.sf2`/`.sf3`). */
+/** Codifica um bloco de bytes em base64 (string binária em sub-blocos de
+ *  32 KB pra não estourar a pilha do `String.fromCharCode(...spread)`). */
+function bytesToBase64(bytes: Uint8Array): string {
+  const CHUNK = 32 * 1024;
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(offset, Math.min(offset + CHUNK, bytes.length)));
+  }
+  return btoa(binary);
+}
+
+/** Grava bytes arbitrários em disco via comando Rust (`save_binary_file`, em blocos de 4 MB), sem depender do escopo de `@tauri-apps/plugin-fs` no Windows nem estourar a serialização JSON em arquivos grandes (ex.: SoundFonts `.sf2`/`.sf3`).
+ *
+ * v0.2.18: blocos em base64 (não mais `Array.from(bytes)` como array de
+ * números JSON) — o formato antigo gerava payload ~4x maior e parseava
+ * muito mais devagar; em SoundFonts de centenas de MB a escrita parecia
+ * travada junto com a exportação. */
 const BINARY_WRITE_CHUNK_BYTES = 4 * 1024 * 1024;
 export async function writeBinaryFileSafe(path: string, bytes: Uint8Array): Promise<void> {
   if (bytes.byteLength === 0) {
-    await invoke('save_binary_file', { path, data: [], append: false });
+    await invoke('save_binary_file', { path, dataBase64: '', append: false });
     return;
   }
   for (let offset = 0; offset < bytes.byteLength; offset += BINARY_WRITE_CHUNK_BYTES) {
     const slice = bytes.subarray(offset, Math.min(offset + BINARY_WRITE_CHUNK_BYTES, bytes.byteLength));
     await invoke('save_binary_file', {
       path,
-      data: Array.from(slice),
+      dataBase64: bytesToBase64(slice),
       append: offset > 0,
     });
   }
@@ -783,7 +799,9 @@ export function buildAutoSamplerSf2Zones(
         hiKey: kr.hiKey,
         loVel: task.loVel,
         hiVel: task.hiVel,
-        interleaved: raw.interleaved,
+        // Converte pra Int16 já aqui (v0.2.18) — `Sf2ExportZone` não retém
+        // mais Float32, pra não dobrar o pico de memória no SF2 final.
+        pcmInt16: float32ToInt16Interleaved(raw.interleaved),
         sampleRateHz: raw.sampleRateHz,
         channels: raw.channels === 1 ? 1 : 2,
         loopStartFrame: loop?.loopStartFrame,

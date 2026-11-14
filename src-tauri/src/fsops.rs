@@ -92,13 +92,24 @@ fn sort_tracks(mut tracks: Vec<TrackEntry>) -> Vec<TrackEntry> {
 /// (igual a scan_folder_tracks acima) não faz sentido restringir pelo escopo
 /// do plugin tauri-plugin-fs — o usuário já escolheu explicitamente onde
 /// salvar, em qualquer pasta/unidade do disco.
+///
+/// v0.2.18: `data_base64` em vez de `data: Vec<u8>` — serializar cada byte
+/// como número JSON (`Array.from(bytes)`) gerava um payload ~4x maior e
+/// muito mais lento de parsear; em SoundFonts de centenas de MB a escrita
+/// sozinha parecia travada. Base64 é ~33% maior que o binário e parseia
+/// rápido. O chamador (`writeBinaryFileSafe` em autoSampler.ts) envia em
+/// blocos de 4 MB.
 #[tauri::command]
 pub async fn save_binary_file(
     path: String,
-    data: Vec<u8>,
+    data_base64: String,
     append: Option<bool>,
 ) -> Result<(), String> {
+    use base64::Engine;
     use tokio::io::AsyncWriteExt;
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(data_base64.as_bytes())
+        .map_err(|e| format!("falha ao decodificar bloco base64 pra '{path}': {e}"))?;
     if append.unwrap_or(false) {
         let mut file = tokio::fs::OpenOptions::new()
             .create(true)

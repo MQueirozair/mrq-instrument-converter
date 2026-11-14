@@ -43,7 +43,7 @@ async function compileToNode(entry) {
   return import(`file://${outfile}`);
 }
 
-const { buildSf2Binary } = await compileToNode('src/audio/rack/sf2Export.ts');
+const { buildSf2Binary, float32ToInt16Interleaved } = await compileToNode('src/audio/rack/sf2Export.ts');
 
 let passed = 0;
 function check(name, fn) {
@@ -106,7 +106,7 @@ const sf2Bytes = buildSf2Binary(
       hiKey: 66,
       loVel: 0,
       hiVel: 127,
-      interleaved: loopedPcm,
+      pcmInt16: float32ToInt16Interleaved(loopedPcm),
       sampleRateHz: SR,
       channels: 1,
       loopStartFrame,
@@ -119,7 +119,7 @@ const sf2Bytes = buildSf2Binary(
       hiKey: 127,
       loVel: 0,
       hiVel: 127,
-      interleaved: stereoPcm,
+      pcmInt16: float32ToInt16Interleaved(stereoPcm),
       sampleRateHz: SR,
       channels: 2,
     },

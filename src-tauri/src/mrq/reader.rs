@@ -137,13 +137,44 @@ fn repair_legacy_flac_streaminfo(flac_bytes: &mut [u8]) -> bool {
 
 pub fn extract_sample(path: &std::path::Path, sample_id: &str) -> Result<MrqDecodedSample, MrqError> {
     let file_metadata = read_file_metadata(path)?;
+    let (mut file, header) = open_and_validate_header(path)?;
+    decode_sample_entry(&mut file, &header, &file_metadata, sample_id)
+}
+
+/// Extrai VÁRIAS amostras numa única abertura do arquivo (v0.2.18) — os
+/// metadados (JSON inteiro) são lidos UMA vez só, em vez de uma vez por
+/// amostra. A exportação SF2 do conversor (`mrqToSf2Export.ts`) pede
+/// centenas de amostras de uma biblioteca grande; chamar
+/// `extract_sample` uma vez por zona reabria o arquivo e reparseava o
+/// JSON inteiro a cada chamada, e a exportação parecia travada por
+/// minutos ("fica só girando"). A ordem do vetor de saída segue a ordem
+/// de `sample_ids` pedida.
+pub fn extract_samples(path: &std::path::Path, sample_ids: &[String]) -> Result<Vec<MrqDecodedSample>, MrqError> {
+    let file_metadata = read_file_metadata(path)?;
+    let (mut file, header) = open_and_validate_header(path)?;
+    let mut out = Vec::with_capacity(sample_ids.len());
+    for sample_id in sample_ids {
+        out.push(decode_sample_entry(&mut file, &header, &file_metadata, sample_id)?);
+    }
+    Ok(out)
+}
+
+/// Núcleo compartilhado por `extract_sample`/`extract_samples`: localiza a
+/// entrada no índice já lido, lê só os bytes FLAC daquela amostra, confere
+/// o SHA-256 e decodifica. Recebe o arquivo já aberto e o cabeçalho já
+/// validado pra o caminho em lote não reabrir/revalidar nada.
+fn decode_sample_entry(
+    file: &mut std::fs::File,
+    header: &ValidatedHeader,
+    file_metadata: &MrqFileMetadata,
+    sample_id: &str,
+) -> Result<MrqDecodedSample, MrqError> {
     let entry = file_metadata
         .samples
         .iter()
         .find(|s| s.id == sample_id)
         .ok_or_else(|| MrqError::SampleNotFound { sample_id: sample_id.to_string() })?;
 
-    let (mut file, header) = open_and_validate_header(path)?;
     let sample_block_start = format::HEADER_FIXED_LEN + header.metadata_len;
     let abs_offset = sample_block_start
         .checked_add(entry.relative_offset)

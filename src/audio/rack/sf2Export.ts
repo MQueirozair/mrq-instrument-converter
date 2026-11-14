@@ -79,6 +79,17 @@ class ByteWriter {
     this.push(b);
   }
 
+  /** Escreve um array inteiro de PCM 16-bit de UMA VEZ (uma única alocação).
+   *  NUNCA usar `i16()` num loop por sample point: cada chamada aloca um
+   *  `Uint8Array(2)` e empurra em `parts` — num piano multisample com
+   *  dezenas de milhões de frames isso vira dezenas de milhões de
+   *  alocações e o WebView trava/estoura memória (spinner infinito na
+   *  exportação SF2, v0.2.18). Assume little-endian (x86/x64/ARM — todos
+   *  os alvos deste app), que é o byte order do SF2. */
+  pushInt16Array(pcm: Int16Array): void {
+    this.push(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+  }
+
   u32(v: number): void {
     const b = new Uint8Array(4);
     new DataView(b.buffer).setUint32(0, v >>> 0, true);
@@ -179,8 +190,13 @@ export interface Sf2ExportZone {
   hiKey: number;
   loVel: number;
   hiVel: number;
-  /** PCM Float32 intercalado, -1.0..1.0 — mesmo formato usado por mrqBuilderAddSample (ver mrqFormat.ts). */
-  interleaved: Float32Array;
+  /** PCM 16-bit intercalado (já convertido — ver `float32ToInt16Interleaved`).
+   *  Int16 (e não Float32) de propósito: numa biblioteca grande (piano
+   *  multisample), reter TODAS as amostras em Float32 enquanto o SF2 é
+   *  montado dobra o pico de memória e pode derrubar o WebView. Quem
+   *  extrai o áudio (Auto Sampler / `mrqToSf2Export.ts`) converte pra
+   *  Int16 na hora e descarta o Float32. */
+  pcmInt16: Int16Array;
   sampleRateHz: number;
   channels: 1 | 2;
   /** Frames (não bytes, não amostras intercaladas) relativos ao INÍCIO deste buffer — ambos precisam vir juntos ou nenhum. */
@@ -214,11 +230,23 @@ function floatTo16(sample: number): number {
   return Math.round(clamped * 32767);
 }
 
-/** Extrai um canal de um buffer intercalado como array de inteiros 16-bit (sem normalização adicional — já deve vir em -1..1). */
-function extractChannelInt16(interleaved: Float32Array, channels: number, channelIndex: number): Int16Array {
-  const frameCount = Math.floor(interleaved.length / channels);
+/** Converte PCM Float32 intercalado (-1.0..1.0) pra Int16 intercalado — o
+ *  formato que `Sf2ExportZone.pcmInt16` espera. Exportado pra quem extrai
+ *  áudio (Auto Sampler, `mrqToSf2Export.ts`) converter na hora e descartar
+ *  o Float32, em vez de reter o dobro de memória até o SF2 ficar pronto. */
+export function float32ToInt16Interleaved(interleaved: Float32Array): Int16Array {
+  const out = new Int16Array(interleaved.length);
+  for (let i = 0; i < interleaved.length; i += 1) out[i] = floatTo16(interleaved[i]);
+  return out;
+}
+
+/** Extrai um canal de um buffer Int16 intercalado (cópia por canal — o
+ *  formato SF2 guarda cada canal como amostra física separada). */
+function extractChannelInt16(pcmInt16: Int16Array, channels: number, channelIndex: number): Int16Array {
+  if (channels === 1) return pcmInt16;
+  const frameCount = Math.floor(pcmInt16.length / channels);
   const out = new Int16Array(frameCount);
-  for (let f = 0; f < frameCount; f += 1) out[f] = floatTo16(interleaved[f * channels + channelIndex]);
+  for (let f = 0; f < frameCount; f += 1) out[f] = pcmInt16[f * channels + channelIndex];
   return out;
 }
 
@@ -276,7 +304,7 @@ export function buildMultiPresetSf2Binary(presets: Sf2ExportPreset[], soundFontN
         const idx = physicalSamples.length;
         physicalSamples.push({
           name: `${label}_${zoneIdx}`,
-          pcm: extractChannelInt16(zone.interleaved, 1, 0),
+          pcm: extractChannelInt16(zone.pcmInt16, 1, 0),
           sampleRateHz: zone.sampleRateHz,
           rootNote: zone.rootNote,
           loopStartFrame: zone.loopStartFrame,
@@ -289,7 +317,7 @@ export function buildMultiPresetSf2Binary(presets: Sf2ExportPreset[], soundFontN
         const rightIdx = leftIdx + 1;
         physicalSamples.push({
           name: `${label}_${zoneIdx}L`,
-          pcm: extractChannelInt16(zone.interleaved, 2, 0),
+          pcm: extractChannelInt16(zone.pcmInt16, 2, 0),
           sampleRateHz: zone.sampleRateHz,
           rootNote: zone.rootNote,
           loopStartFrame: zone.loopStartFrame,
@@ -299,7 +327,7 @@ export function buildMultiPresetSf2Binary(presets: Sf2ExportPreset[], soundFontN
         });
         physicalSamples.push({
           name: `${label}_${zoneIdx}R`,
-          pcm: extractChannelInt16(zone.interleaved, 2, 1),
+          pcm: extractChannelInt16(zone.pcmInt16, 2, 1),
           sampleRateHz: zone.sampleRateHz,
           rootNote: zone.rootNote,
           loopStartFrame: zone.loopStartFrame,
@@ -322,13 +350,17 @@ export function buildMultiPresetSf2Binary(presets: Sf2ExportPreset[], soundFontN
 
   // 2) sdta: concatena o PCM de TODOS os samples físicos (de todos os presets), com padding de zeros entre cada um
   //    (e no final) — guarda o offset (em SAMPLE POINTS, não bytes) de início/fim de cada um pra preencher o SHDR depois.
+  //    Escrita em BLOCO (`pushInt16Array`, uma alocação por amostra) — nunca
+  //    um `i16()` por sample point (v0.2.18: isso travava a exportação SF2
+  //    em bibliotecas grandes, spinner infinito).
   const smplWriter = new ByteWriter();
   const sampleOffsets: { start: number; end: number }[] = [];
+  const zeroPad = new Int16Array(MIN_PAD_SAMPLES);
   for (const sample of physicalSamples) {
     const start = smplWriter.byteLength / 2;
-    for (let i = 0; i < sample.pcm.length; i += 1) smplWriter.i16(sample.pcm[i]);
+    smplWriter.pushInt16Array(sample.pcm);
     const end = smplWriter.byteLength / 2;
-    for (let i = 0; i < MIN_PAD_SAMPLES; i += 1) smplWriter.i16(0);
+    smplWriter.pushInt16Array(zeroPad);
     sampleOffsets.push({ start, end });
   }
 

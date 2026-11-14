@@ -360,3 +360,15 @@ bloco FLAC tinha menos de 16 frames geravam STREAMINFO inválido para o
 `claxon`. O escritor agora declara bloco fixo (`min == max == block_size`) e
 o leitor repara arquivos antigos em memória, preservando hashes e
 `total_samples`. Detalhes e testes em `mrq-converter-sf2-export.md` §9.
+
+## 10. Atualização v0.2.18 — exportação SF2 sem travamento
+
+A exportação `.sf2`/`.sf3` travava em bibliotecas grandes ("fica só
+girando"): o escritor RIFF alocava um `Uint8Array` por sample point, a
+extração de amostras fazia um invoke por zona (reabrindo o `.mrq` e
+reparseando o JSON a cada vez) e a escrita final serializava cada byte
+como número JSON. Correções: escrita PCM em bloco (`pushInt16Array`),
+`Sf2ExportZone.pcmInt16` (metade da memória), comando em lote
+`mrq_extract_samples` com progresso real na UI, `convert_to_mrq` sem
+parse duplicado (SF2/NPNO) e blocos base64 em `save_binary_file`.
+Detalhes, números medidos e testes em `mrq-converter-sf2-export.md` §10.
