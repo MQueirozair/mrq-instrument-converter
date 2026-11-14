@@ -372,3 +372,17 @@ como número JSON. Correções: escrita PCM em bloco (`pushInt16Array`),
 `mrq_extract_samples` com progresso real na UI, `convert_to_mrq` sem
 parse duplicado (SF2/NPNO) e blocos base64 em `save_binary_file`.
 Detalhes, números medidos e testes em `mrq-converter-sf2-export.md` §10.
+
+## 11. Atualização v0.2.19 — assinatura ad-hoc no macOS (fim do "danificado")
+
+O `.dmg` macOS era gerado sem assinatura de código (`bundle.macOS` só
+tinha `minimumSystemVersion`). Ao baixar pelo navegador, o macOS aplica
+a flag de quarentena e o Gatekeeper bloqueia o app com _"MRQ Instrument
+Converter está danificado e não pode ser aberto"_ — o erro de instalação
+relatado. Correção: `signingIdentity: "-"` no `tauri.conf.json` (assinatura
+ad-hoc, sem certificado pago) + passo no CI que verifica com
+`codesign --verify --deep --strict` que o `.app` saiu assinado. Na
+primeira abertura o macOS pede confirmação ("desenvolvedor não
+identificado") — basta clicar com o botão direito → Abrir → Abrir, ou
+rodar `xattr -cr` no Terminal. Instruções também nas notas do release e
+na Ajuda do app.

@@ -477,6 +477,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>.mrq dá "Extensão não reconhecida" ou erro de FLAC</b></td><td>Versão anterior do app: extensão não mapeada e/ou STREAMINFO com bloco curto inválido.</td><td>Atualize para v0.2.17 ou superior. O app reconhece .mrq e repara o STREAMINFO antigo em memória; arquivos já salvos não precisam ser gerados de novo.</td></tr>
               <tr><td><b>Dispositivo salvo sumiu ao reiniciar</b></td><td>Hardware desconectado ou nova sessão de permissão do sistema.</td><td>O nome continua no rascunho; reconecte, atualize a lista e reconfirme a permissão de áudio no macOS/Linux.</td></tr>
               <tr><td><b>Quero recomeçar do zero</b></td><td>Rascunho antigo continua salvo de propósito.</td><td>Use Limpar tudo / Voltar do zero e confirme. Os arquivos já exportados não são apagados.</td></tr>
+              <tr><td><b>macOS: “está danificado e não pode ser aberto” ao instalar o .dmg</b></td><td>App sem assinatura de código bloqueado pelo Gatekeeper (versões até v0.2.18).</td><td>Atualize para <b>v0.2.19+</b> (assinatura ad-hoc). Na primeira abertura, clique com o botão direito no app em Aplicativos → <b>Abrir</b> → <b>Abrir</b>. Ou rode no Terminal: <code>xattr -cr "/Applications/MRQ Instrument Converter.app"</code>.</td></tr>
             </tbody>
           </table>
         </div>
