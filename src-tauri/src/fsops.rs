@@ -116,6 +116,30 @@ pub async fn save_binary_file(
     }
 }
 
+/// Apaga APENAS o `.mrq` temporário criado pela exportação direta de
+/// SF2/SF3 do Instrument Converter (v0.2.16). O front-end precisa de um
+/// `.mrq` em disco porque `mrq_extract_sample` lê as amostras de lá, mas o
+/// usuário escolheu salvar só `.sf2`/`.sf3` — então o intermediário não deve
+/// sobrar na pasta temporária. O nome é validado com prefixo + extensão e o
+/// caminho precisa ser absoluto: este comando nunca pode virar um "apagar
+/// arquivo qualquer" chamado pelo WebView.
+#[tauri::command]
+pub async fn remove_temp_converter_file(path: String) -> Result<(), String> {
+    let parsed = std::path::Path::new(&path);
+    let file_name = parsed.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !parsed.is_absolute()
+        || !file_name.starts_with("mrq-sf-export-")
+        || !file_name.ends_with(".mrq")
+    {
+        return Err(format!("remoção temporária recusada para '{path}'"));
+    }
+    match tokio::fs::remove_file(&path).await {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("falha ao remover temporário '{path}': {e}")),
+    }
+}
+
 /// Lista os nomes (não os caminhos completos) de TODAS as entradas diretas
 /// de `dir` — arquivos e subpastas, sem filtrar por extensão nem descer
 /// recursivamente. Usado pelo NkiLayerVoice (ver src/audio/rack/NkiLayerVoice.ts)

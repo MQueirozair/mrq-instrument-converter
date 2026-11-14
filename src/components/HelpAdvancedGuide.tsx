@@ -288,6 +288,52 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
         </div>
       </section>
 
+      {/* ---------------- ESCOLHA DE FORMATO ---------------- */}
+      <section className="help-section" id="formatos-saida">
+        <SectionHead
+          icon={CheckSquare}
+          title="Escolher o formato de saída: .mrq, .sf2 ou .sf3"
+          purpose="Três botões habilitados no item PRONTO; SoundFont salva direto, sem obrigar a salvar .mrq primeiro"
+        />
+        <p>
+          Na faixa de pré-visualização, o grupo <b>Formato de saída</b> agora é uma escolha real entre{' '}
+          <b>Converter para .mrq</b>, <b>Exportar .sf2</b> e <b>Exportar .sf3</b>. O formato clicado fica destacado.
+          Assim que o arquivo foi analisado e tem zonas com amostra, os três podem ser usados — inclusive antes de
+          qualquer <code>.mrq</code> ter sido salvo.
+        </p>
+        <Figure
+          src="help-converter-format-antes.png"
+          alt="Tela real enviada pelo usuário mostrando Converter para .mrq habilitado e Exportar .sf2/.sf3 desabilitados"
+          caption="Antes (foto enviada): só .mrq estava amarelo; SF2 e SF3 ficavam cinzas e não deixavam escolher o formato."
+        />
+        <Figure
+          src="help-converter-format-depois.svg"
+          alt="Comparativo ilustrado: antes apenas .mrq habilitado; depois os três formatos .mrq, .sf2 e .sf3 habilitados, com .sf2 selecionado"
+          caption="Depois: escolha qualquer formato. O escolhido fica amarelo e o salvamento acontece diretamente na extensão correta."
+        />
+        <div className="help-table-wrap">
+          <table className="help-table">
+            <thead><tr><th>Escolha</th><th>O que o app faz</th><th>Arquivo gerado</th></tr></thead>
+            <tbody>
+              <tr><td><b>Converter para .mrq</b></td><td>Abre "Salvar instrumento MRQ" e converte a origem para o formato nativo do Rack.</td><td><code>instrumento.mrq</code></td></tr>
+              <tr><td><b>Exportar .sf2</b></td><td>Se ainda não houver .mrq, gera um .mrq temporário, lê as amostras reais, monta o SoundFont e apaga o temporário.</td><td><code>instrumento.sf2</code></td></tr>
+              <tr><td><b>Exportar .sf3</b></td><td>Mesmo fluxo do .sf2, com confirmação prévia: o arquivo é PCM 16-bit sem compressão Vorbis, apenas com extensão .sf3.</td><td><code>instrumento.sf3</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <Note kind="warn">
+          <b>SF3 sem compressão real:</b> o conversor ainda não embute um codificador Ogg Vorbis. O <code>.sf3</code>{' '}
+          toca normalmente em players compatíveis com SF2/SF3, mas tem o mesmo tamanho de um <code>.sf2</code>. O aviso
+          aparece antes do salvamento para você decidir com informação completa.
+        </Note>
+        <ul>
+          <li>Se você editou o mapeamento, a conversão temporária usa as edições e lê o modelo resultante de verdade — o SoundFont não sai de uma visualização desatualizada.</li>
+          <li>Se o item já tem um <code>.mrq</code> convertido (inclusive vindo do Auto Sampler ou da captura Kontakt), SF2/SF3 reaproveitam esse arquivo e não reconvertem à toa.</li>
+          <li>Durante análise, conversão ou exportação, as outras escolhas ficam temporariamente desabilitadas para evitar duas gravações concorrentes.</li>
+          <li>Um instrumento sem zonas com amostra mantém apenas <code>.mrq</code> disponível; os botões trazem no <em>tooltip</em> o motivo exato de cada desabilitação.</li>
+        </ul>
+      </section>
+
       {/* ---------------- DIVISÃO DE VELOCITY ---------------- */}
       <section className="help-section" id="mapeador-velocity">
         <SectionHead
@@ -374,6 +420,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Notas vermelhas / silenciosas</b></td><td>Instrumento sem patch naquela nota, volume baixo, canal errado ou release curto demais.</td><td>Corrija a causa e use Recapturar só as ruins; as verdes permanecem.</td></tr>
               <tr><td><b>Áudio com clipping</b></td><td>Ganho ou volume do instrumento alto demais.</td><td>Reduza Input Gain/volume até o VU ficar abaixo de 0 dBFS e recapture as notas afetadas.</td></tr>
               <tr><td><b>Arquivo SF2 muito grande fecha o app</b></td><td>Motor WebAssembly com teto de memória fixo.</td><td>A versão atual valida o tamanho e escreve em blocos; se ainda falhar, converta menos presets/velocidades por vez.</td></tr>
+              <tr><td><b>SF2/SF3 continuam cinzas</b></td><td>Item ainda em análise, exportação em andamento ou instrumento sem zonas com amostra.</td><td>Aguarde o status PRONTO; passe o mouse no botão para ver o motivo. Com zonas válidas, os três formatos habilitam automaticamente — não é preciso salvar .mrq antes.</td></tr>
               <tr><td><b>Dispositivo salvo sumiu ao reiniciar</b></td><td>Hardware desconectado ou nova sessão de permissão do sistema.</td><td>O nome continua no rascunho; reconecte, atualize a lista e reconfirme a permissão de áudio no macOS/Linux.</td></tr>
               <tr><td><b>Quero recomeçar do zero</b></td><td>Rascunho antigo continua salvo de propósito.</td><td>Use Limpar tudo / Voltar do zero e confirme. Os arquivos já exportados não são apagados.</td></tr>
             </tbody>

@@ -34,9 +34,17 @@
  * diretamente, igual a `mrqFormat.ts`) — não tem equivalente no build legado
  * em Electron, então não passa por `window.api` para diálogo de arquivos.
  */
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { open as openDialog, save as saveDialog, ask } from '@tauri-apps/plugin-dialog';
+import { join, tempDir } from '@tauri-apps/api/path';
 import { writeBinaryFileSafe } from '../audio/rack/autoSampler';
+import {
+  converterOutputChoices,
+  outputFormatSaveDialogOptions,
+  removeTemporaryMrqFile,
+  temporaryMrqFileName,
+  type ConverterOutputFormat,
+} from '../audio/rack/converterOutputFormat';
 import {
   AlertTriangle,
   AudioLines,
@@ -382,14 +390,9 @@ function InstrumentConverterInner() {
 
   async function convertItem(item: QueueItem) {
     if (!item.format) return;
-    const suggested = item.fileName.replace(/\.[^.]+$/, '') + '.mrq';
     let destPath: string | null = null;
     try {
-      destPath = await saveDialog({
-        title: 'Salvar instrumento MRQ',
-        defaultPath: suggested,
-        filters: [{ name: 'MRQ Instrument (.mrq)', extensions: ['mrq'] }],
-      });
+      destPath = await saveDialog(outputFormatSaveDialogOptions('mrq', item.fileName));
     } catch (err) {
       logConverterError('falha ao abrir diálogo de salvar', err);
       pushToast('Não foi possível abrir o seletor de destino.', 'error');
@@ -432,12 +435,28 @@ function InstrumentConverterInner() {
     }
   }
 
-  /** Exporta um item JÁ CONVERTIDO (precisa de `convertedPath`) pra `.sf2`/`.sf3` —
-   *  ver mrqToSf2Export.ts. `.sf3` pede confirmação antes (nenhuma compressão real
-   *  ainda — ver aviso no topo daquele módulo). */
+  /** Salva DIRETAMENTE em `.sf2`/`.sf3` — v0.2.16.
+   *
+   * Antes o botão só habilitava depois de `Converter para .mrq`, porque
+   * `buildSf2FromMrqInstrument` lê as amostras de um `.mrq` em disco. Agora,
+   * quando o usuário escolhe SoundFont sem ter salvo `.mrq`, fazemos uma
+   * conversão temporária automática, lemos o modelo real desse arquivo,
+   * montamos o SoundFont e apagamos o temporário. Nada de exigir dois
+   * "Salvar como" nem de deixar os botões cinzas com o item PRONTO.
+   * `.sf3` continua avisando que ainda não há compressão Vorbis real. */
   async function exportItemToSoundFont(item: QueueItem, ext: 'sf2' | 'sf3') {
-    const instrument = item.editedInstrument ?? item.instrument;
-    if (!item.convertedPath || !instrument) return;
+    const choices = converterOutputChoices({
+      status: item.status,
+      sourceFormat: item.format,
+      convertedPath: item.convertedPath,
+      captureKind: item.captureKind,
+      hasExportableZones: mrqInstrumentHasExportableZones(item.editedInstrument ?? item.instrument),
+      exportingSoundFont: item.exportingSoundFont,
+    });
+    if (!choices[ext].enabled) {
+      pushToast(choices[ext].reason, 'error');
+      return;
+    }
     if (ext === 'sf3') {
       let proceed = true;
       try {
@@ -450,23 +469,46 @@ function InstrumentConverterInner() {
       }
       if (!proceed) return;
     }
-    const suggested = `${item.fileName.replace(/\.[^.]+$/, '')}.${ext}`;
     let destPath: string | null = null;
     try {
-      destPath = await saveDialog({
-        title: ext === 'sf2' ? 'Salvar SoundFont 2 (.sf2)' : 'Salvar SoundFont 3 (.sf3)',
-        defaultPath: suggested,
-        filters: [{ name: ext === 'sf2' ? 'SoundFont 2 (.sf2)' : 'SoundFont 3 (.sf3)', extensions: [ext] }],
-      });
+      destPath = await saveDialog(outputFormatSaveDialogOptions(ext, item.fileName));
     } catch (err) {
       logConverterError('falha ao abrir diálogo de salvar SF2/SF3', err);
       pushToast('Não foi possível abrir o seletor de destino.', 'error');
       return;
     }
     if (!destPath) return;
+
     setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: ext } : q)));
+    let tempMrqPath: string | null = null;
     try {
-      const bytes = await buildSf2FromMrqInstrument(item.convertedPath, instrument);
+      let mrqPath: string | null = item.convertedPath ?? null;
+      let exportInstrument: MrqInstrumentModel | undefined = item.convertedMetadata?.instrument;
+      // Se houver mapeamento editado, reconstrói o .mrq temporário com o
+      // override para o SoundFont sair com as edições de verdade.
+      const needsFreshMrq = !mrqPath || (Boolean(item.editedInstrument) && Boolean(item.format));
+      if (needsFreshMrq) {
+        if (!item.format) throw new Error('este item não tem formato de origem nem .mrq já salvo para exportar.');
+        tempMrqPath = await join(
+          await tempDir(),
+          temporaryMrqFileName(Date.now(), Math.random().toString(36).slice(2))
+        );
+        pushToast(`Preparando .${ext} — convertendo amostras em arquivo temporário…`);
+        await convertAny(item.format, item.path, tempMrqPath, undefined, {
+          libraryRoot: item.libraryRoot,
+          overrideInstrument: item.editedInstrument,
+        });
+        const metadata = await mrqReadMetadata(tempMrqPath);
+        mrqPath = tempMrqPath;
+        exportInstrument = metadata.instrument;
+      }
+      if (!exportInstrument && mrqPath) {
+        exportInstrument = (await mrqReadMetadata(mrqPath)).instrument;
+      }
+      if (!mrqPath || !exportInstrument) {
+        throw new Error('não foi possível obter o instrumento convertido para montar o SoundFont.');
+      }
+      const bytes = await buildSf2FromMrqInstrument(mrqPath, exportInstrument);
       await writeBinaryFileSafe(destPath, bytes);
       pushToast(`"${basenameOf(destPath)}" exportado com sucesso.`);
     } catch (err) {
@@ -474,6 +516,14 @@ function InstrumentConverterInner() {
       const e = formatConverterErrorMessage(err);
       pushToast(`Falha ao exportar ${ext.toUpperCase()}: ${e}`, 'error');
     } finally {
+      if (tempMrqPath) {
+        try {
+          await removeTemporaryMrqFile(tempMrqPath);
+        } catch (err) {
+          // Falha na limpeza não invalida o arquivo já salvo; só registra.
+          logConverterError('falha ao remover .mrq temporário do exportador SoundFont', err);
+        }
+      }
       setQueue((prev) => prev.map((q) => (q.id === item.id ? { ...q, exportingSoundFont: undefined } : q)));
     }
   }
@@ -789,8 +839,25 @@ function PreviewStrip({
 }) {
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [activeOutputFormat, setActiveOutputFormat] = useState<ConverterOutputFormat>(item.captureKind ? 'sf2' : 'mrq');
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+
+  useEffect(() => {
+    setActiveOutputFormat(item.captureKind ? 'sf2' : 'mrq');
+  }, [item.id, item.captureKind]);
+
+  const outputChoices = converterOutputChoices({
+    status: item.status,
+    sourceFormat: item.format,
+    convertedPath: item.convertedPath,
+    captureKind: item.captureKind,
+    hasExportableZones: mrqInstrumentHasExportableZones(item.editedInstrument ?? item.instrument),
+    exportingSoundFont: item.exportingSoundFont,
+  });
+  const shownOutputFormat = item.exportingSoundFont ?? activeOutputFormat;
+  const formatButtonClass = (format: ConverterOutputFormat) =>
+    `btn small converter-format-choice ${shownOutputFormat === format ? 'primary' : 'ghost'}`;
 
   function pickRepresentativeSample(): { sampleId: string } | null {
     for (const preset of item.instrument?.presets ?? []) {
@@ -856,31 +923,45 @@ function PreviewStrip({
             <Settings2 size={13} /> Editar mapeamento{item.editedInstrument ? ' •' : ''}
           </button>
         )}
-        {item.status !== 'converting' && !item.captureKind && (
-          <button className="btn primary small" onClick={onConvert}>
-            <Save size={13} /> {item.status === 'converted' ? 'Converter novamente' : 'Converter para .mrq'}
+        {/* v0.2.16: os TRÊS formatos são escolhas reais. SF2/SF3 não exigem
+            mais salvar .mrq antes — clicar faz a conversão temporária e salva
+            direto no formato escolhido. */}
+        <div className="converter-format-picker" role="group" aria-label="Escolha o formato de saída">
+          <span className="converter-format-label">Formato de saída:</span>
+          <button
+            type="button"
+            className={formatButtonClass('mrq')}
+            aria-pressed={shownOutputFormat === 'mrq'}
+            disabled={!outputChoices.mrq.enabled}
+            title={outputChoices.mrq.reason}
+            onClick={() => { setActiveOutputFormat('mrq'); onConvert(); }}
+          >
+            <Save size={13} /> {item.captureKind ? 'Arquivo .mrq já gerado' : item.status === 'converted' ? 'Converter novamente' : 'Converter para .mrq'}
           </button>
-        )}
-        {!item.captureKind && mrqInstrumentHasExportableZones(item.editedInstrument ?? item.instrument) && (
-          <>
-            <button
-              className="btn ghost small"
-              disabled={!item.convertedPath || !!item.exportingSoundFont}
-              title={item.convertedPath ? 'Exportar este instrumento como SoundFont 2 (.sf2)' : 'Converta pra .mrq primeiro para poder exportar SF2/SF3'}
-              onClick={() => onExportSoundFont('sf2')}
-            >
-              {item.exportingSoundFont === 'sf2' ? <Loader2 size={13} className="mrq-spin" /> : <Save size={13} />} Exportar .sf2
-            </button>
-            <button
-              className="btn ghost small"
-              disabled={!item.convertedPath || !!item.exportingSoundFont}
-              title={item.convertedPath ? 'Exportar este instrumento como SoundFont 3 (.sf3) — sem compressão real, ver aviso ao clicar' : 'Converta pra .mrq primeiro para poder exportar SF2/SF3'}
-              onClick={() => onExportSoundFont('sf3')}
-            >
-              {item.exportingSoundFont === 'sf3' ? <Loader2 size={13} className="mrq-spin" /> : <Save size={13} />} Exportar .sf3
-            </button>
-          </>
-        )}
+          <button
+            type="button"
+            className={formatButtonClass('sf2')}
+            aria-pressed={shownOutputFormat === 'sf2'}
+            disabled={!outputChoices.sf2.enabled}
+            title={outputChoices.sf2.reason}
+            onClick={() => { setActiveOutputFormat('sf2'); onExportSoundFont('sf2'); }}
+          >
+            {item.exportingSoundFont === 'sf2' ? <Loader2 size={13} className="mrq-spin" /> : <Save size={13} />} Exportar .sf2
+          </button>
+          <button
+            type="button"
+            className={formatButtonClass('sf3')}
+            aria-pressed={shownOutputFormat === 'sf3'}
+            disabled={!outputChoices.sf3.enabled}
+            title={`${outputChoices.sf3.reason} Aviso: .sf3 ainda é PCM sem compressão Vorbis.`}
+            onClick={() => { setActiveOutputFormat('sf3'); onExportSoundFont('sf3'); }}
+          >
+            {item.exportingSoundFont === 'sf3' ? <Loader2 size={13} className="mrq-spin" /> : <Save size={13} />} Exportar .sf3
+          </button>
+          <span className="converter-format-hint">
+            Escolha qualquer um · .sf2/.sf3 salvam direto, sem precisar gerar .mrq antes
+          </span>
+        </div>
       </div>
     </div>
   );

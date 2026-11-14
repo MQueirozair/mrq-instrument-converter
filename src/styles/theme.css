@@ -2124,3 +2124,24 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
   .help-table td:first-child { white-space: normal; }
   .help-subhead { font-size: 13.5px; }
 }
+
+/* ---------- v0.2.16 — escolha direta do formato de saída ------------------
+   Os três botões (.mrq/.sf2/.sf3) agora funcionam como escolhas reais, sem
+   obrigar a salvar .mrq antes de habilitar SoundFont. */
+.converter-preview-actions { flex-wrap: wrap; }
+.converter-format-picker {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 5px 7px; border: 1px solid var(--border); border-radius: 8px;
+  background: #14171b;
+}
+.converter-format-label {
+  color: var(--text-2); font-size: 9.5px; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .06em; white-space: nowrap;
+}
+.converter-format-choice[aria-pressed="true"] { box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.converter-format-choice:disabled { opacity: .42; cursor: not-allowed; box-shadow: none; }
+.converter-format-hint { flex-basis: 100%; color: #84e1ad; font-size: 9.5px; line-height: 1.35; }
+@media (max-width: 760px) {
+  .converter-format-picker { width: 100%; }
+  .converter-format-choice { flex: 1 1 auto; }
+}

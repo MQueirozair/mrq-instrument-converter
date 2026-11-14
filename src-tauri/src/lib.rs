@@ -202,6 +202,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fsops::scan_folder_tracks,
             fsops::save_binary_file,
+            fsops::remove_temp_converter_file,
             fsops::local_addresses,
             fsops::list_dir_entry_names,
             fsops::find_sample_files,

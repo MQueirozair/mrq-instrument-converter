@@ -79,6 +79,7 @@ const TOC: { id: string; label: string }[] = [
   { id: 'auto-sampler', label: 'Auto Sampler (ilustrado)' },
   { id: 'auto-sampler-rascunho', label: 'Rascunho / Voltar do zero' },
   { id: 'conversor-avancado', label: 'Conversor avançado' },
+  { id: 'formatos-saida', label: 'Escolher .mrq / .sf2 / .sf3' },
   { id: 'mapeador-velocity', label: 'Divisão de velocity' },
   { id: 'conversor-midi', label: 'Pré-escuta USB MIDI' },
   { id: 'auto-sampler-problemas', label: 'Problemas comuns' },
@@ -135,6 +136,7 @@ export default function HelpPanel() {
             <div className="help-jump-row">
               <button type="button" onClick={() => goTo('auto-sampler')}>1–4 · Auto Sampler passo a passo</button>
               <button type="button" onClick={() => goTo('auto-sampler-rascunho')}>Rascunho / Voltar do zero</button>
+              <button type="button" onClick={() => goTo('formatos-saida')}>Escolher .mrq / .sf2 / .sf3</button>
               <button type="button" onClick={() => goTo('mapeador-velocity')}>Divisões 10 / 48 / 81</button>
               <button type="button" onClick={() => goTo('conversor-midi')}>Pré-escuta USB MIDI</button>
               <button type="button" onClick={() => goTo('auto-sampler-problemas')}>Problemas comuns</button>
@@ -1172,8 +1174,18 @@ export default function HelpPanel() {
               ou os limites da zona, em vez de digitar o número MIDI. "Restaurar zona" desfaz só a zona atual;
               "Reverter tudo" descarta todas as edições feitas na tela.
             </li>
-            <li>Clique em <b>"Converter para .mrq"</b> e escolha onde salvar.</li>
+            <li>
+              <b>Escolha o formato de saída:</b> clique em <b>"Converter para .mrq"</b>, <b>"Exportar .sf2"</b> ou{' '}
+              <b>"Exportar .sf3"</b> e escolha onde salvar. Os três ficam habilitados assim que o item está{' '}
+              <b>PRONTO</b> — não é mais necessário gerar um <code>.mrq</code> antes de liberar SoundFont.
+            </li>
           </ol>
+          <div className="help-callout tip">
+            <b>v0.2.16 — escolha direta de formato:</b> ao salvar <code>.sf2</code>/<code>.sf3</code> sem ter um{' '}
+            <code>.mrq</code> na fila, o Conversor cria um <code>.mrq</code> temporário automaticamente, lê as amostras
+            dele, monta o SoundFont e remove o temporário. Você faz um único "Salvar como". O botão selecionado fica
+            destacado; <code>.sf3</code> ainda mostra o aviso honesto de que usa PCM sem compressão Vorbis.
+          </div>
           <div className="help-callout">
             <b>As edições do Editor de Mapeamento entram de verdade no arquivo exportado</b> para instrumentos vindos
             de <code>.syx</code> e <code>.exs</code> — o <code>.mrq</code> salvo já sai com a nota
