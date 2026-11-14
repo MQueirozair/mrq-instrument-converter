@@ -10,8 +10,9 @@ assim que o item está **PRONTO** e tem zonas com amostra.
 ## Como usar
 
 1. Importe o arquivo de origem e aguarde o status **PRONTO** — qualquer um
-   dos formatos suportados (SF2/SF3/NPNO/NSMP/SYX/EXS/WAV/AIFF/FLAC/MP3/OGG)
-   ou um resultado de Auto Sampler/captura Kontakt.
+   dos formatos suportados (MRQ/SF2/SF3/NPNO/NSMP/SYX/EXS/WAV/AIFF/FLAC/
+   MP3/OGG) ou um resultado de Auto Sampler/captura Kontakt. Um `.mrq`
+   importado já entra carregado e pronto para escolher `.sf2`/`.sf3`.
 2. Clique diretamente em **"Converter para .mrq"**, **"Exportar .sf2"** ou
    **"Exportar .sf3"**. O formato escolhido fica destacado.
 3. Escolha onde salvar. Para `.sf3`, confirme o aviso de que o arquivo ainda
@@ -96,3 +97,48 @@ entre os três formatos de saída.
 O aviso de `.sf3` sem compressão Vorbis continua antes do salvamento; a
 exportação SF2/SF3 continua **somente no Instrument Converter**, não foi
 adicionada como opção extra na tela do Auto Sampler.
+
+## 9. v0.2.17 — importar/carregar `.mrq` e consertar FLAC curto
+
+**Problema da foto:** `Astoria Grand XL 6.1.mrq` entrava na fila com
+`Extensão não reconhecida pelo conversor`; nas tentativas de exportar SF2
+aparecia `decodeError: Ill-formed FLAC stream: invalid block size, must be at
+least 16`. Eram dois bugs independentes:
+
+1. **`EXTENSION_MAP` não tinha `mrq`.** O formato nativo do app não podia ser
+   usado como ORIGEM no Conversor, então não carregava o instrumento nem
+   liberava a conversão para SoundFont.
+2. **`flacenc` 0.5.1 + `claxon` 0.4.3.** Quando o tamanho de uma amostra
+   terminava num último bloco de 1–15 frames (`len % 4096`), o encoder gravava
+   esse bloco curto como `min_block_size` do STREAMINFO. O FLAC exige mínimo
+   16 e o `claxon` recusava o stream antes de decodificar qualquer amostra.
+
+**Correção:**
+
+- `ConverterFormatId` ganhou `'mrq'`; o seletor de arquivos, os rótulos, a
+  checagem de assinatura `MRQ1` e o dispatcher `inspectAny`/`convertAny`
+  reconhecem o formato nativo.
+- `src/audio/rack/mrqSource.ts` lê `mrq_read_metadata`, devolve o instrumento
+  + índice de amostras e monta um relatório de compatibilidade honesto. Ao
+  inspecionar, `InstrumentConverter.tsx` marca o próprio arquivo como
+  `convertedPath`/`convertedMetadata`: pré-escuta, Mapping Editor e os botões
+  `.sf2`/`.sf3` funcionam imediatamente, sem conversão redundante.
+- `Converter para .mrq` num `.mrq` importado vira **"Salvar/copiar .mrq"**:
+  o comando Rust `copy_converter_file` copia em streaming e recusa origem =
+  destino. Nenhum áudio é recodificado.
+- `exportItemToSoundFont` usa `editedInstrument` diretamente quando já há um
+  `.mrq`: as zonas continuam referenciando os mesmos `sampleId`s, então as
+  edições de mapeamento entram no SF2 sem criar outro arquivo temporário.
+- `writer.rs` agora força `min == max == block_size` no STREAMINFO depois de
+  `encode_with_fixed_block_size`, como exige o modo de bloco fixo do FLAC. O
+  último frame curto continua presente e `total_samples` não muda.
+- `reader.rs` repara **em memória** o STREAMINFO de `.mrq` antigos antes de
+  chamar `claxon`, sem alterar o arquivo e depois da checagem SHA-256. Assim,
+  instrumentos já exportados em versões anteriores voltam a abrir/exportar.
+- Testes: `scripts/test-mrq-source.mjs` (7 casos: extensão, assinatura,
+  dispatcher, metadados, habilitação dos três formatos e diálogo) e novos
+  testes Rust em `reader.rs`/`writer.rs` para STREAMINFO inválido e amostras
+  de 5 e 4097 frames.
+
+Limitação mantida: `.sf3` ainda é PCM sem compressão Vorbis; o aviso antes de
+salvar continua. A exportação SF2/SF3 continua apenas no Instrument Converter.

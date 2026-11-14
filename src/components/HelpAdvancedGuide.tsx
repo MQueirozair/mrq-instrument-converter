@@ -255,7 +255,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
         <ol>
           <li>
             <b>Escolher arquivos:</b> use <b>Escolher arquivos…</b> ou a ação <b>Importar instrumento renderizado
-            pelo Kontakt…</b>. Formatos aceitos incluem <code>.exs</code>, <code>.sf2</code>, <code>.sf3</code>,{' '}
+            pelo Kontakt…</b>. Formatos aceitos incluem <code>.mrq</code>, <code>.exs</code>, <code>.sf2</code>, <code>.sf3</code>,{' '}
             <code>.npno</code>, <code>.nsmp</code>, <code>.syx</code>, <code>.wav</code>, <code>.aiff</code>,{' '}
             <code>.flac</code>, <code>.mp3</code>, <code>.ogg</code> e pastas com amostras nomeadas por nota.
           </li>
@@ -286,6 +286,52 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
           <b>Arquivos grandes:</b> a escrita de SF2/SF3 e a leitura de SoundFont grandes são feitas em blocos e com
           checagem prévia de tamanho, para não estourar a memória fixa do motor WebAssembly nem fechar o app.
         </div>
+      </section>
+
+      {/* ---------------- IMPORTAR MRQ ---------------- */}
+      <section className="help-section" id="importar-mrq">
+        <SectionHead
+          icon={Database}
+          title="Abrir um .mrq e converter para outros formatos"
+          purpose="Carregar o instrumento nativo sem erro, ouvir as amostras e exportar .sf2/.sf3 — inclusive arquivos antigos com FLAC de bloco curto"
+        />
+        <p>
+          Um arquivo <code>.mrq</code> gerado pelo próprio app já contém tudo: presets, grupos, zonas e as amostras
+          em FLAC lossless. Na v0.2.17 ele passou a ser aceito também como <b>origem</b> no Conversor. Basta usar{' '}
+          <b>Escolher arquivos…</b> e selecionar o <code>.mrq</code>: o item fica <b>PRONTO</b>, a pré-escuta toca
+          uma amostra real, o Mapping Editor abre e os três formatos de saída ficam disponíveis.
+        </p>
+        <Figure
+          src="help-converter-mrq-antes.png"
+          alt="Tela real do problema: Astoria Grand XL 6.1.mrq com erro de extensão não reconhecida e falhas ao exportar SF2 por FLAC inválido"
+          caption="Foto enviada: o .mrq aparecia como ERRO e as exportações SF2 falhavam com 'invalid block size, must be at least 16'."
+        />
+        <Figure
+          src="help-converter-mrq-fluxo.svg"
+          alt="Diagrama do fluxo corrigido: .mrq é reconhecido pela assinatura MRQ1, carrega o índice, fica PRONTO e pode virar SF2, SF3 ou uma cópia MRQ; STREAMINFO de bloco curto é corrigido"
+          caption="Depois: o .mrq carrega sem recodificar; o STREAMINFO inválido é corrigido no escritor e reparado em memória na leitura de arquivos antigos."
+        />
+        <div className="help-table-wrap">
+          <table className="help-table">
+            <thead><tr><th>Sintoma antigo</th><th>Causa</th><th>Correção</th></tr></thead>
+            <tbody>
+              <tr><td><b>Extensão não reconhecida pelo conversor</b></td><td><code>mrq</code> não estava no mapa de extensões nem na lista do seletor de arquivos.</td><td>Detector, assinatura <code>MRQ1</code>, rótulo e dispatcher reconhecem o formato nativo.</td></tr>
+              <tr><td><b>Não foi possível analisar o .mrq</b></td><td>O item era marcado como erro antes de qualquer leitura.</td><td><code>mrq_read_metadata</code> carrega instrumento + índice de amostras e marca o próprio arquivo como já convertido.</td></tr>
+              <tr><td><b>Falha ao exportar SF2: decodeError … invalid block size, must be at least 16</b></td><td>Amostra com último bloco FLAC de 1–15 frames: o encoder antigo escrevia esse tamanho como <code>min_block_size</code>, e o <code>claxon</code> exige mínimo 16.</td><td>Novos arquivos declaram bloco fixo <code>min = max = 4096</code>; arquivos antigos são reparados em memória antes de decodificar, sem alterar hash ou áudio.</td></tr>
+              <tr><td><b>Converter para .mrq num arquivo que já é .mrq</b></td><td>Não fazia sentido recodificar.</td><td>Virou <b>Salvar/copiar .mrq</b>: cópia em streaming no Rust, sem recodificar FLAC e com proteção contra origem = destino.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <Note kind="tip">
+          <b>Fluxo recomendado:</b> importe o <code>.mrq</code> → confira no inspetor → escolha <b>Exportar .sf2</b>{' '}
+          ou <b>Exportar .sf3</b>. Se você ajustou zonas no Mapping Editor, o SoundFont usa o mapeamento editado;
+          os áudios continuam sendo lidos do <code>.mrq</code> original.
+        </Note>
+        <Note kind="warn">
+          O exportador SoundFont ainda não grava afinação fina, volume, envelope e filtro por zona; esses dados
+          continuam intactos no <code>.mrq</code>. O <code>.sf3</code> também continua sem compressão Vorbis real —
+          o app avisa antes de salvar.
+        </Note>
       </section>
 
       {/* ---------------- ESCOLHA DE FORMATO ---------------- */}
@@ -421,6 +467,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Áudio com clipping</b></td><td>Ganho ou volume do instrumento alto demais.</td><td>Reduza Input Gain/volume até o VU ficar abaixo de 0 dBFS e recapture as notas afetadas.</td></tr>
               <tr><td><b>Arquivo SF2 muito grande fecha o app</b></td><td>Motor WebAssembly com teto de memória fixo.</td><td>A versão atual valida o tamanho e escreve em blocos; se ainda falhar, converta menos presets/velocidades por vez.</td></tr>
               <tr><td><b>SF2/SF3 continuam cinzas</b></td><td>Item ainda em análise, exportação em andamento ou instrumento sem zonas com amostra.</td><td>Aguarde o status PRONTO; passe o mouse no botão para ver o motivo. Com zonas válidas, os três formatos habilitam automaticamente — não é preciso salvar .mrq antes.</td></tr>
+              <tr><td><b>.mrq dá "Extensão não reconhecida" ou erro de FLAC</b></td><td>Versão anterior do app: extensão não mapeada e/ou STREAMINFO com bloco curto inválido.</td><td>Atualize para v0.2.17 ou superior. O app reconhece .mrq e repara o STREAMINFO antigo em memória; arquivos já salvos não precisam ser gerados de novo.</td></tr>
               <tr><td><b>Dispositivo salvo sumiu ao reiniciar</b></td><td>Hardware desconectado ou nova sessão de permissão do sistema.</td><td>O nome continua no rascunho; reconecte, atualize a lista e reconfirme a permissão de áudio no macOS/Linux.</td></tr>
               <tr><td><b>Quero recomeçar do zero</b></td><td>Rascunho antigo continua salvo de propósito.</td><td>Use Limpar tudo / Voltar do zero e confirme. Os arquivos já exportados não são apagados.</td></tr>
             </tbody>

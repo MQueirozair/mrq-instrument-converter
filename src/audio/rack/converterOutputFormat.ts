@@ -60,6 +60,7 @@ export function converterOutputChoices(input: ConverterOutputAvailabilityInput):
   if (busyReason) mrq = disabled(busyReason);
   else if (input.captureKind) mrq = disabled('Este item já nasceu como .mrq (Auto Sampler / captura Kontakt).');
   else if (!hasSource) mrq = disabled('Formato de origem não reconhecido — não há como converter para .mrq.');
+  else if (input.sourceFormat === 'mrq') mrq = { enabled: true, reason: 'Este arquivo já é .mrq — salvar uma cópia sem recodificar as amostras.', requiresTemporaryMrq: false };
   else mrq = { enabled: true, reason: 'Salvar como instrumento nativo .mrq.', requiresTemporaryMrq: false };
 
   const soundFontBase: Omit<ConverterOutputChoice, 'reason'> = {

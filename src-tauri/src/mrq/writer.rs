@@ -162,8 +162,24 @@ fn encode_flac(interleaved: &[i32], channels: u16, bits_per_sample: u16, sample_
     );
 
     let block_size = config.block_size;
-    let stream = flacenc::encode_with_fixed_block_size(&config, source, block_size)
+    let mut stream = flacenc::encode_with_fixed_block_size(&config, source, block_size)
         .map_err(|e| MrqError::EncodeError { message: format!("{e:?}") })?;
+
+    // CORREÇÃO v0.2.17 — amostras cuja duração termina num bloco curto de
+    // 1..15 frames faziam o `flacenc` 0.5.1 gravar esse tamanho como
+    // `min_block_size` no STREAMINFO. O formato FLAC exige no mínimo 16, e o
+    // decoder `claxon` rejeitava o stream com exatamente o erro da foto:
+    // "Ill-formed FLAC stream: invalid block size, must be at least 16".
+    // Em modo de bloco fixo, o mínimo NÃO deve incluir o último bloco curto:
+    // declaramos min == max == block_size (4096 por padrão), que é o que a
+    // especificação e o libFLAC fazem. O frame curto continua no arquivo e o
+    // total_samples segue correto.
+    stream
+        .stream_info_mut()
+        .set_block_sizes(block_size, block_size)
+        .map_err(|e| MrqError::EncodeError {
+            message: format!("falha ao corrigir STREAMINFO de bloco fixo: {e:?}"),
+        })?;
 
     let mut sink = flacenc::bitsink::ByteSink::new();
     stream
@@ -926,5 +942,36 @@ mod tests {
         let state = MrqBuilderState::default();
         let err = finish(&state, "sessao-que-nao-existe").unwrap_err();
         assert!(matches!(err, MrqError::SessionNotFound { .. }));
+    }
+
+    /// v0.2.17 — regressão do erro da foto: "decodeError: Ill-formed FLAC
+    /// stream: invalid block size, must be at least 16". Uma amostra com
+    /// 4096+5 frames (ou só 5) termina num último bloco menor que 16; o
+    /// STREAMINFO precisa declarar o bloco FIXO, não esse bloco curto.
+    #[test]
+    fn short_final_flac_blocks_roundtrip_without_claxon_rejection() {
+        for len in [5_usize, 4097_usize] {
+            let dir = temp_dir(&format!("short_flac_block_{len}"));
+            let final_path = dir.join("instrumento.mrq");
+            let state = MrqBuilderState::default();
+            let session_id = begin(&state, final_path.clone(), minimal_instrument(&["s0"])).unwrap();
+            let pcm = sine_i32(len, 16);
+            add_sample(
+                &state,
+                &session_id,
+                "s0".to_string(),
+                MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: pcm.clone() },
+                48000,
+                1,
+            )
+            .unwrap();
+            finish(&state, &session_id).unwrap();
+
+            let decoded = reader::extract_sample(&final_path, "s0")
+                .unwrap_or_else(|e| panic!("claxon deveria decodificar o bloco curto de {len} frames: {e:?}"));
+            assert_eq!(decoded.interleaved.len(), len, "o tamanho decodificado precisa bater com a amostra de {len} frames");
+
+            std::fs::remove_dir_all(&dir).ok();
+        }
     }
 }

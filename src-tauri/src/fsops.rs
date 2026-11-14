@@ -116,6 +116,26 @@ pub async fn save_binary_file(
     }
 }
 
+/// Copia um arquivo já escolhido pelo usuário para o destino também escolhido
+/// num diálogo "Salvar como" — usado pelo Instrument Converter quando a
+/// origem JÁ é um `.mrq` (v0.2.17): não há conversão nem recodificação, mas
+/// ainda assim o botão "Salvar/copiar .mrq" precisa gerar o arquivo pedido.
+/// Feito em Rust/streaming para nunca carregar um instrumento de vários GB
+/// na memória do WebView.
+#[tauri::command]
+pub async fn copy_converter_file(source_path: String, dest_path: String) -> Result<u64, String> {
+    let source = std::path::PathBuf::from(&source_path);
+    let dest = std::path::PathBuf::from(&dest_path);
+    let source_canonical = std::fs::canonicalize(&source).unwrap_or(source.clone());
+    let dest_canonical = std::fs::canonicalize(&dest).unwrap_or(dest.clone());
+    if source == dest || source_canonical == dest_canonical {
+        return Err("origem e destino são o mesmo arquivo .mrq; escolha outro nome ou pasta.".to_string());
+    }
+    tokio::fs::copy(&source, &dest)
+        .await
+        .map_err(|e| format!("falha ao copiar '{source_path}' para '{dest_path}': {e}"))
+}
+
 /// Apaga APENAS o `.mrq` temporário criado pela exportação direta de
 /// SF2/SF3 do Instrument Converter (v0.2.16). O front-end precisa de um
 /// `.mrq` em disco porque `mrq_extract_sample` lê as amostras de lá, mas o

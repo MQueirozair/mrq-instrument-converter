@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="620" viewBox="0 0 1120 620" role="img" aria-label="Fluxo corrigido: importar .mrq, carregar metadados e converter para SF2 ou SF3">
+<defs>
+  <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#57d38c"/></marker>
+  <marker id="redarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" fill="#ff6b7f"/></marker>
+</defs>
+<rect width="1120" height="620" fill="#0e1014"/>
+<rect x="28" y="22" width="1064" height="64" rx="12" fill="#191d24" stroke="#343b47"/>
+<text x="50" y="50" fill="#e7ebf2" font-size="21" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">Abrir .mrq e converter para outros formatos</text>
+<text x="50" y="74" fill="#98a3b3" font-size="12.5" font-family="DejaVu Sans, Arial, sans-serif">v0.2.17: o formato nativo virou origem válida; o FLAC de bloco curto foi corrigido no escritor e reparado na leitura.</text>
+
+<rect x="36" y="106" width="500" height="184" rx="12" fill="#21171a" stroke="#6b3440" stroke-width="2"/>
+<text x="58" y="136" fill="#ff8a9c" font-size="14" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">ANTES — dois bloqueios</text>
+<rect x="58" y="156" width="160" height="44" rx="8" fill="#2b2f36" stroke="#5b6472"/>
+<text x="138" y="184" fill="#e7ebf2" font-size="13" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">Astoria.mrq</text>
+<line x1="222" y1="178" x2="276" y2="178" stroke="#ff6b7f" stroke-width="3" marker-end="url(#redarrow)"/>
+<rect x="286" y="156" width="220" height="44" rx="8" fill="#351b20" stroke="#ff6b7f"/>
+<text x="396" y="184" fill="#ffd7dd" font-size="11.5" font-weight="700" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">Extensão não reconhecida</text>
+<text x="58" y="232" fill="#c1c8d1" font-size="11.5" font-family="DejaVu Sans, Arial, sans-serif">1. O dispatcher não tinha 'mrq' no mapa de extensões.</text>
+<rect x="58" y="246" width="448" height="28" rx="6" fill="#3a1f24" stroke="#7d3d48"/>
+<text x="72" y="265" fill="#ffd7dd" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">decodeError: Ill-formed FLAC stream: invalid block size, must be at least 16</text>
+
+<rect x="556" y="106" width="528" height="184" rx="12" fill="#12241b" stroke="#2d5d47" stroke-width="2"/>
+<text x="578" y="136" fill="#8fe8ab" font-size="14" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">DEPOIS — carrega e escolhe a saída</text>
+<rect x="578" y="156" width="120" height="44" rx="8" fill="#2b2f36" stroke="#5b6472"/>
+<text x="638" y="184" fill="#e7ebf2" font-size="13" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">Astoria.mrq</text>
+<line x1="702" y1="178" x2="736" y2="178" stroke="#57d38c" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="744" y="156" width="150" height="44" rx="8" fill="#173b4a" stroke="#54c9ef"/>
+<text x="819" y="178" fill="#d8f4ff" font-size="11" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">MRQ1 + índice</text>
+<text x="819" y="194" fill="#9ccfe3" font-size="9" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">instrumento + amostras</text>
+<line x1="898" y1="178" x2="932" y2="178" stroke="#57d38c" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="940" y="156" width="120" height="44" rx="8" fill="#173b4a" stroke="#54c9ef"/>
+<text x="1000" y="184" fill="#d8f4ff" font-size="11" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">PRONTO</text>
+<text x="578" y="232" fill="#c1c8d1" font-size="11.5" font-family="DejaVu Sans, Arial, sans-serif">✓ Pré-escuta, Mapping Editor e os três formatos habilitados.</text>
+<rect x="578" y="246" width="448" height="28" rx="6" fill="#102b1c" stroke="#2d5d47"/>
+<text x="592" y="265" fill="#a8e8c0" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">SF2/SF3 leem as amostras do próprio .mrq — sem conversão redundante.</text>
+
+<rect x="36" y="312" width="1048" height="118" rx="12" fill="#151c26" stroke="#2b4258"/>
+<text x="58" y="342" fill="#e7ebf2" font-size="14" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">Correção do FLAC de bloco curto</text>
+<rect x="58" y="358" width="200" height="50" rx="8" fill="#3a1f24" stroke="#7d3d48"/>
+<text x="158" y="379" fill="#ffd7dd" font-size="11" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">STREAMINFO antigo</text>
+<text x="158" y="398" fill="#ffb3bf" font-size="10.5" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">min = 5 · max = 4096</text>
+<line x1="266" y1="383" x2="314" y2="383" stroke="#e8d34a" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="324" y="358" width="244" height="50" rx="8" fill="#2d2918" stroke="#e8d34a"/>
+<text x="446" y="379" fill="#ffe99a" font-size="11" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">Novo arquivo: bloco fixo</text>
+<text x="446" y="398" fill="#e8d34a" font-size="10.5" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">min = max = 4096</text>
+<line x1="578" y1="383" x2="626" y2="383" stroke="#57d38c" stroke-width="3" marker-end="url(#arrow)"/>
+<rect x="636" y="358" width="244" height="50" rx="8" fill="#173b4a" stroke="#54c9ef"/>
+<text x="758" y="379" fill="#d8f4ff" font-size="11" font-weight="800" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">Arquivo antigo: reparo em memória</text>
+<text x="758" y="398" fill="#9ccfe3" font-size="10.5" text-anchor="middle" font-family="DejaVu Sans, Arial, sans-serif">hash e áudio preservados</text>
+<text x="896" y="383" fill="#c1c8d1" font-size="11" font-family="DejaVu Sans, Arial, sans-serif">→ claxon decodifica</text>
+<text x="896" y="402" fill="#8fe8ab" font-size="11" font-weight="700" font-family="DejaVu Sans, Arial, sans-serif">sem erro de bloco 16</text>
+
+<rect x="36" y="452" width="1048" height="140" rx="12" fill="#191d24" stroke="#343b47"/>
+<text x="58" y="482" fill="#e7ebf2" font-size="14" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">O que cada saída faz com um .mrq importado</text>
+<rect x="58" y="500" width="320" height="72" rx="9" fill="#20252e" stroke="#3c4149"/>
+<text x="76" y="524" fill="#ffe99a" font-size="12" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">Salvar/copiar .mrq</text>
+<text x="76" y="546" fill="#c1c8d1" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">Cópia em streaming no Rust. Não recodifica FLAC</text>
+<text x="76" y="562" fill="#c1c8d1" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">e recusa origem = destino.</text>
+<rect x="394" y="500" width="320" height="72" rx="9" fill="#20252e" stroke="#3c4149"/>
+<text x="412" y="524" fill="#8fe8ab" font-size="12" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">Exportar .sf2</text>
+<text x="412" y="546" fill="#c1c8d1" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">Extrai cada amostra do .mrq e monta RIFF/sfbk.</text>
+<text x="412" y="562" fill="#c1c8d1" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">Preserva tecla, velocity, root e loop.</text>
+<rect x="730" y="500" width="330" height="72" rx="9" fill="#2d2918" stroke="#e8d34a"/>
+<text x="748" y="524" fill="#ffe99a" font-size="12" font-weight="800" font-family="DejaVu Sans, Arial, sans-serif">Exportar .sf3</text>
+<text x="748" y="546" fill="#e6d9a8" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">Mesmo SoundFont, com aviso: ainda é PCM</text>
+<text x="748" y="562" fill="#e6d9a8" font-size="10.5" font-family="DejaVu Sans, Arial, sans-serif">sem compressão Vorbis; não fica menor.</text>
+</svg>

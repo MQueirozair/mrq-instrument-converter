@@ -95,6 +95,46 @@ pub fn read_sample_index(path: &std::path::Path) -> Result<Vec<MrqSampleIndexEnt
 /// nem em disco nem em CPU (ver teste
 /// `extracting_one_sample_still_works_even_if_another_sample_is_corrupted`
 /// em `writer.rs`, que prova isso indiretamente).
+/// Repara, SOMENTE NA MEMÓRIA, o STREAMINFO de FLACs gravados por versões
+/// antigas do app: `flacenc` 0.5.1 escrevia o último bloco curto (1..15
+/// frames) como `min_block_size`, e `claxon` recusa qualquer mínimo < 16.
+/// Não altera os bytes do arquivo nem o SHA-256 (a checagem de integridade
+/// acontece antes desta função), e preserva `total_samples`/MD5 — só troca
+/// os 4 bytes de limites de bloco. Em streams de bloco fixo, o mínimo não
+/// inclui o último bloco: usamos o próprio máximo declarado (ou 16 quando o
+/// arquivo inteiro é curto). Devolve `true` quando houve reparo.
+fn repair_legacy_flac_streaminfo(flac_bytes: &mut [u8]) -> bool {
+    // "fLaC" + cabeçalho do primeiro metadata block + STREAMINFO (34 bytes).
+    if flac_bytes.len() < 42
+        || flac_bytes[0] != b'f'
+        || flac_bytes[1] != b'L'
+        || flac_bytes[2] != b'a'
+        || flac_bytes[3] != b'C'
+    {
+        return false;
+    }
+    // O bit mais alto de `flac_bytes[4]` só indica "último bloco"; os 7 bits
+    // baixos precisam ser 0 (STREAMINFO).
+    if (flac_bytes[4] & 0x7f) != 0 {
+        return false;
+    }
+    let block_len = ((flac_bytes[5] as usize) << 16)
+        | ((flac_bytes[6] as usize) << 8)
+        | (flac_bytes[7] as usize);
+    if block_len < 34 || flac_bytes.len() < 8 + block_len {
+        return false;
+    }
+    let min_block_size = u16::from_be_bytes([flac_bytes[8], flac_bytes[9]]);
+    let max_block_size = u16::from_be_bytes([flac_bytes[10], flac_bytes[11]]);
+    if min_block_size >= 16 {
+        return false;
+    }
+    let fixed_block_size = max_block_size.max(16);
+    flac_bytes[8..10].copy_from_slice(&fixed_block_size.to_be_bytes());
+    flac_bytes[10..12].copy_from_slice(&fixed_block_size.to_be_bytes());
+    true
+}
+
 pub fn extract_sample(path: &std::path::Path, sample_id: &str) -> Result<MrqDecodedSample, MrqError> {
     let file_metadata = read_file_metadata(path)?;
     let entry = file_metadata
@@ -120,8 +160,18 @@ pub fn extract_sample(path: &std::path::Path, sample_id: &str) -> Result<MrqDeco
         return Err(MrqError::HashMismatchSample { sample_id: entry.id.clone() });
     }
 
+    // Compatibilidade com `.mrq` já gravados (ex.: "Astoria Grand XL 6.1"
+    // da foto): corrige em memória o STREAMINFO inválido gerado pelo encoder
+    // antigo, sem tocar no arquivo e sem invalidar o hash já conferido acima.
+    let repaired_legacy_streaminfo = repair_legacy_flac_streaminfo(&mut flac_bytes);
     let mut flac_reader = claxon::FlacReader::new(std::io::Cursor::new(flac_bytes))
-        .map_err(|e| MrqError::DecodeError { message: e.to_string() })?;
+        .map_err(|e| MrqError::DecodeError {
+            message: if repaired_legacy_streaminfo {
+                format!("{} (STREAMINFO legado reparado em memória)", e)
+            } else {
+                e.to_string()
+            },
+        })?;
 
     // "Metadados inconsistentes" (revisão técnica pós-Fase 10): o SHA-256
     // acima só prova que os BYTES do FLAC não foram adulterados — não prova
@@ -212,4 +262,63 @@ pub fn validate_integrity(path: &std::path::Path) -> Result<MrqIntegrityReport, 
     let stored_global = format::to_hex(&trailer);
 
     Ok(MrqIntegrityReport { global_ok: computed_global == stored_global, per_sample })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::repair_legacy_flac_streaminfo;
+
+    /// Monta só o começo de um FLAC: marcador + cabeçalho do primeiro bloco
+    /// STREAMINFO + os 34 bytes mínimos desse bloco. O suficiente para testar
+    /// os quatro bytes de limites de bloco sem precisar de um encoder aqui.
+    fn flac_with_stream_info(min_block_size: u16, max_block_size: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 42];
+        bytes[0..4].copy_from_slice(b"fLaC");
+        bytes[4] = 0; // STREAMINFO (bit de "último bloco" desligado)
+        bytes[5..8].copy_from_slice(&[0, 0, 34]);
+        bytes[8..10].copy_from_slice(&min_block_size.to_be_bytes());
+        bytes[10..12].copy_from_slice(&max_block_size.to_be_bytes());
+        bytes
+    }
+
+    fn block_sizes(bytes: &[u8]) -> (u16, u16) {
+        (
+            u16::from_be_bytes([bytes[8], bytes[9]]),
+            u16::from_be_bytes([bytes[10], bytes[11]]),
+        )
+    }
+
+    #[test]
+    fn repairs_legacy_streaminfo_with_short_final_block() {
+        let mut bytes = flac_with_stream_info(5, 4096);
+        assert!(repair_legacy_flac_streaminfo(&mut bytes));
+        assert_eq!(block_sizes(&bytes), (4096, 4096));
+    }
+
+    #[test]
+    fn repairs_legacy_streaminfo_when_the_whole_file_is_short() {
+        let mut bytes = flac_with_stream_info(5, 5);
+        assert!(repair_legacy_flac_streaminfo(&mut bytes));
+        assert_eq!(block_sizes(&bytes), (16, 16));
+    }
+
+    #[test]
+    fn leaves_a_valid_streaminfo_untouched() {
+        let mut bytes = flac_with_stream_info(4096, 4096);
+        assert!(!repair_legacy_flac_streaminfo(&mut bytes));
+        assert_eq!(block_sizes(&bytes), (4096, 4096));
+    }
+
+    #[test]
+    fn refuses_to_patch_non_flac_or_non_streaminfo_data() {
+        let mut not_flac = flac_with_stream_info(5, 4096);
+        not_flac[0] = b'X';
+        assert!(!repair_legacy_flac_streaminfo(&mut not_flac));
+        assert_eq!(block_sizes(&not_flac), (5, 4096));
+
+        let mut other_block = flac_with_stream_info(5, 4096);
+        other_block[4] = 4; // VORBIS_COMMENT, não STREAMINFO
+        assert!(!repair_legacy_flac_streaminfo(&mut other_block));
+        assert_eq!(block_sizes(&other_block), (5, 4096));
+    }
 }

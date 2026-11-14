@@ -307,7 +307,7 @@ function InstrumentConverterInner() {
         filters: [
           {
             name: 'Instrumentos suportados',
-            extensions: ['sf2', 'sf3', 'npno', 'nsmp', 'nsmp3', 'nsmp4', 'syx', 'exs', 'wav', 'wave', 'aiff', 'aif', 'flac', 'mp3', 'ogg'],
+            extensions: ['mrq', 'sf2', 'sf3', 'npno', 'nsmp', 'nsmp3', 'nsmp4', 'syx', 'exs', 'wav', 'wave', 'aiff', 'aif', 'flac', 'mp3', 'ogg'],
           },
           { name: 'Todos os arquivos', extensions: ['*'] },
         ],
@@ -356,14 +356,34 @@ function InstrumentConverterInner() {
       setQueue((prev) =>
         prev.map((q) =>
           q.id === id
-            ? { ...q, status: 'inspected', instrument: result.instrument, compatibility: result.compatibility, unresolved: result.unresolved, libraryRoot }
+            ? {
+                ...q,
+                status: 'inspected',
+                instrument: result.instrument,
+                compatibility: result.compatibility,
+                unresolved: result.unresolved,
+                libraryRoot,
+                // Um .mrq importado JÁ É o arquivo convertido: aponta a fila
+                // para ele mesmo, sem obrigar uma conversão redundante. Isso
+                // libera pré-escuta, Mapping Editor e exportação SF2/SF3.
+                convertedPath: format === 'mrq' ? path : q.convertedPath,
+                convertedMetadata: result.nativeMetadata ?? q.convertedMetadata,
+                error: undefined,
+              }
             : q
         )
       );
     } catch (err) {
       logConverterError(`falha ao inspecionar "${path}" (formato=${format})`, err);
       const e = formatConverterErrorMessage(err);
-      setQueue((prev) => prev.map((q) => (q.id === id ? { ...q, status: 'inspect-error', error: e, libraryRoot } : q)));
+      setQueue((prev) => prev.map((q) => (q.id === id ? {
+        ...q,
+        status: 'inspect-error',
+        error: e,
+        libraryRoot,
+        convertedPath: format === 'mrq' ? undefined : q.convertedPath,
+        convertedMetadata: format === 'mrq' ? undefined : q.convertedMetadata,
+      } : q)));
     }
   }
 
@@ -483,10 +503,15 @@ function InstrumentConverterInner() {
     let tempMrqPath: string | null = null;
     try {
       let mrqPath: string | null = item.convertedPath ?? null;
-      let exportInstrument: MrqInstrumentModel | undefined = item.convertedMetadata?.instrument;
-      // Se houver mapeamento editado, reconstrói o .mrq temporário com o
-      // override para o SoundFont sair com as edições de verdade.
-      const needsFreshMrq = !mrqPath || (Boolean(item.editedInstrument) && Boolean(item.format));
+      // v0.2.17: quando já existe um .mrq (inclusive um .mrq importado),
+      // usamos as edições de mapeamento diretamente — as zonas continuam
+      // apontando para os MESMOS sampleIds, então não precisa recodificar
+      // nem gerar outro .mrq temporário só para trocar o modelo.
+      let exportInstrument: MrqInstrumentModel | undefined =
+        item.editedInstrument ?? item.convertedMetadata?.instrument;
+      // Sem arquivo .mrq ainda, faz a conversão temporária; se houver um
+      // mapeamento editado, `overrideInstrument` entra nessa conversão.
+      const needsFreshMrq = !mrqPath;
       if (needsFreshMrq) {
         if (!item.format) throw new Error('este item não tem formato de origem nem .mrq já salvo para exportar.');
         tempMrqPath = await join(
@@ -574,7 +599,7 @@ function InstrumentConverterInner() {
           </button>
           <div className="converter-dropzone" onClick={() => void pickFiles()}>
             <Upload size={16} />
-            <span>SF2/SF3 · NPNO/NSMP · SYX · EXS · WAV/AIFF/FLAC/MP3/OGG<br />clique para escolher um ou vários arquivos</span>
+            <span>MRQ · SF2/SF3 · NPNO/NSMP · SYX · EXS · WAV/AIFF/FLAC/MP3/OGG<br />clique para escolher um ou vários arquivos</span>
           </div>
 
           <div className="converter-section-label">Do Kontakt / ao vivo</div>
@@ -936,7 +961,7 @@ function PreviewStrip({
             title={outputChoices.mrq.reason}
             onClick={() => { setActiveOutputFormat('mrq'); onConvert(); }}
           >
-            <Save size={13} /> {item.captureKind ? 'Arquivo .mrq já gerado' : item.status === 'converted' ? 'Converter novamente' : 'Converter para .mrq'}
+            <Save size={13} /> {item.captureKind ? 'Arquivo .mrq já gerado' : item.format === 'mrq' ? 'Salvar/copiar .mrq' : item.status === 'converted' ? 'Converter novamente' : 'Converter para .mrq'}
           </button>
           <button
             type="button"

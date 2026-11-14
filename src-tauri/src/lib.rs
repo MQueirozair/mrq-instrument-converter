@@ -203,6 +203,7 @@ pub fn run() {
             fsops::scan_folder_tracks,
             fsops::save_binary_file,
             fsops::remove_temp_converter_file,
+            fsops::copy_converter_file,
             fsops::local_addresses,
             fsops::list_dir_entry_names,
             fsops::find_sample_files,

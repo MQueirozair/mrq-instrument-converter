@@ -18,6 +18,7 @@
  * própria, no backend Rust).
  */
 
+import { invoke } from '@tauri-apps/api/core';
 import {
   mrqConvertAudioFileToMrq,
   mrqConvertNpnoToMrq,
@@ -25,15 +26,19 @@ import {
   mrqInspectAudioFile,
   mrqInspectNpno,
   mrqInspectSf2,
+  mrqReadMetadata,
   type MrqCompatibilityReport,
+  type MrqFileMetadata,
   type MrqFinishResult,
   type MrqInstrumentModel,
 } from './mrqFormat';
 import { convertExsToMrq, inspectExs, type ExsUnresolvedSample } from './exsImport';
 import { convertSyxToMrq, inspectSyx } from './syxImport';
+import { inspectMrqMetadata, MRQ_MAGIC_LABEL } from './mrqSource';
 export type { ExsUnresolvedSample };
 
 export type ConverterFormatId =
+  | 'mrq'
   | 'sf2'
   | 'sf3'
   | 'npno'
@@ -47,6 +52,7 @@ export type ConverterFormatId =
   | 'ogg';
 
 export const FORMAT_LABELS: Record<ConverterFormatId, string> = {
+  mrq: 'Instrumento MRQ nativo',
   sf2: 'SoundFont 2 (SF2)',
   sf3: 'SoundFont 3 (SF3)',
   npno: 'Biblioteca de piano Nord (NPNO)',
@@ -78,6 +84,7 @@ export const FORMAT_LABELS: Record<ConverterFormatId, string> = {
  *  instrumento a partir desse áudio — nenhum arquivo `.nki` é lido ou
  *  teve seu formato reimplementado nesse fluxo. */
 const EXTENSION_MAP: Record<string, ConverterFormatId> = {
+  mrq: 'mrq',
   sf2: 'sf2',
   sf3: 'sf3',
   npno: 'npno',
@@ -192,6 +199,7 @@ function matchesSignature(bytes: Uint8Array, offset: number, sig: string): boole
  * são validados de verdade dentro de cada importador).
  */
 export function sniffMagicBytes(bytes: Uint8Array): string | null {
+  if (matchesSignature(bytes, 0, 'MRQ1')) return MRQ_MAGIC_LABEL;
   if (matchesSignature(bytes, 0, 'RIFF') && matchesSignature(bytes, 8, 'WAVE')) return 'RIFF/WAVE';
   if (matchesSignature(bytes, 0, 'RIFF') && matchesSignature(bytes, 8, 'sfbk')) return 'RIFF/sfbk (SoundFont)';
   if (matchesSignature(bytes, 0, 'FORM') && (matchesSignature(bytes, 8, 'AIFF') || matchesSignature(bytes, 8, 'AIFC'))) {
@@ -210,6 +218,7 @@ export function sniffMagicBytes(bytes: Uint8Array): string | null {
 export function magicBytesConflictWarning(format: ConverterFormatId, sniff: string | null): string | null {
   if (!sniff) return null;
   const expectedByFormat: Partial<Record<ConverterFormatId, string[]>> = {
+    mrq: [MRQ_MAGIC_LABEL],
     wav: ['RIFF/WAVE'],
     aiff: ['FORM/AIFF'],
     flac: ['fLaC'],
@@ -232,6 +241,10 @@ export interface ConverterInspection {
    *  `reason === 'not-found'` estruturalmente e oferecer "escolher pasta da
    *  biblioteca" sem parsear o texto do relatório de compatibilidade. */
   unresolved?: ExsUnresolvedSample[];
+  /** Presente quando a origem já é `.mrq`: metadados completos (modelo +
+   *  índice de amostras), para a fila marcar `convertedPath` e liberar
+   *  pré-escuta/exportação sem converter nada de novo. */
+  nativeMetadata?: MrqFileMetadata;
 }
 
 export interface ConverterConversion {
@@ -268,6 +281,20 @@ export interface ConverterFormatOptions {
   overrideInstrument?: MrqInstrumentModel;
 }
 
+/** Copia um `.mrq` nativo para o destino escolhido sem recodificar amostra
+ *  nenhuma — usado quando o usuário escolhe "Converter para .mrq" tendo
+ *  importado um `.mrq`. O backend Rust faz a cópia em streaming; o front-end
+ *  nunca carrega um instrumento de vários GB inteiro na memória do WebView. */
+async function copyMrqFile(sourcePath: string, destPath: string): Promise<ConverterConversion> {
+  await invoke('copy_converter_file', { sourcePath, destPath });
+  const metadata = await mrqReadMetadata(destPath);
+  const inspection = inspectMrqMetadata(metadata);
+  return {
+    finish: { path: destPath, sampleCount: metadata.samples.length },
+    compatibility: inspection.compatibility,
+  };
+}
+
 /** Inspeciona (parsing estrutural, sem gravar nada em disco) um arquivo de
  *  origem já com o formato detectado. Lança o erro específico de cada
  *  importador quando o arquivo é inválido/fora de escopo (nunca um erro
@@ -279,6 +306,10 @@ export async function inspectAny(
   opts?: ConverterFormatOptions
 ): Promise<ConverterInspection> {
   switch (format) {
+    case 'mrq': {
+      const metadata = await mrqReadMetadata(sourcePath);
+      return inspectMrqMetadata(metadata);
+    }
     case 'sf2':
     case 'sf3':
       return mrqInspectSf2(sourcePath);
@@ -320,6 +351,8 @@ export async function convertAny(
   opts?: ConverterFormatOptions
 ): Promise<ConverterConversion> {
   switch (format) {
+    case 'mrq':
+      return copyMrqFile(sourcePath, destPath);
     case 'sf2':
     case 'sf3':
       return mrqConvertSf2ToMrq(sourcePath, destPath);

@@ -344,3 +344,19 @@ projeto sempre compilável. O escopo técnico já fechado e entregue da Fase 2
 complemento só acrescenta o Analyzer ao planejamento da Fase 8, mais à
 frente, e não inicia nenhum desenvolvimento de interface agora.
 
+
+## 9. Atualização v0.2.17 — `.mrq` também é origem
+
+O plano original tratava `.mrq` apenas como DESTINO da conversão. A tela
+atual também aceita `.mrq` como ORIGEM: `converterFormats.ts` detecta a
+extensão/assinatura `MRQ1`, `mrqSource.ts` lê os metadados e o
+`InstrumentConverter` aponta o próprio arquivo como `convertedPath`. Isso
+permite pré-escutar o instrumento, revisar zonas no Mapping Editor e escolher
+`.sf2`/`.sf3` diretamente. "Salvar/copiar .mrq" usa `copy_converter_file`
+em Rust, sem recodificar FLAC.
+
+Também foi corrigido um bug de compatibilidade binária: amostras cujo último
+bloco FLAC tinha menos de 16 frames geravam STREAMINFO inválido para o
+`claxon`. O escritor agora declara bloco fixo (`min == max == block_size`) e
+o leitor repara arquivos antigos em memória, preservando hashes e
+`total_samples`. Detalhes e testes em `mrq-converter-sf2-export.md` §9.

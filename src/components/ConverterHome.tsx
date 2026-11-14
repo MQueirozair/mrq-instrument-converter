@@ -104,7 +104,7 @@ export default function ConverterHome({
           <button className="cv-home-card" onClick={onPickFiles}>
             <FileAudio size={20} />
             <strong>Arquivos do computador</strong>
-            <span>SoundFonts, bancos NPNO/NSMP, SYX de DX7, EXS e arquivos de áudio. Aceita vários de uma vez.</span>
+            <span>Instrumentos .mrq, SoundFonts, bancos NPNO/NSMP, SYX de DX7, EXS e arquivos de áudio. Aceita vários de uma vez.</span>
             <small>Abrir seletor <ArrowRight size={11} /></small>
           </button>
           <button className="cv-home-card" onClick={onOpenAutoSampler}>

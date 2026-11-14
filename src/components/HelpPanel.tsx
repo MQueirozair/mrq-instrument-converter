@@ -79,6 +79,7 @@ const TOC: { id: string; label: string }[] = [
   { id: 'auto-sampler', label: 'Auto Sampler (ilustrado)' },
   { id: 'auto-sampler-rascunho', label: 'Rascunho / Voltar do zero' },
   { id: 'conversor-avancado', label: 'Conversor avançado' },
+  { id: 'importar-mrq', label: 'Abrir .mrq e converter' },
   { id: 'formatos-saida', label: 'Escolher .mrq / .sf2 / .sf3' },
   { id: 'mapeador-velocity', label: 'Divisão de velocity' },
   { id: 'conversor-midi', label: 'Pré-escuta USB MIDI' },
@@ -136,6 +137,7 @@ export default function HelpPanel() {
             <div className="help-jump-row">
               <button type="button" onClick={() => goTo('auto-sampler')}>1–4 · Auto Sampler passo a passo</button>
               <button type="button" onClick={() => goTo('auto-sampler-rascunho')}>Rascunho / Voltar do zero</button>
+              <button type="button" onClick={() => goTo('importar-mrq')}>Abrir .mrq e converter</button>
               <button type="button" onClick={() => goTo('formatos-saida')}>Escolher .mrq / .sf2 / .sf3</button>
               <button type="button" onClick={() => goTo('mapeador-velocity')}>Divisões 10 / 48 / 81</button>
               <button type="button" onClick={() => goTo('conversor-midi')}>Pré-escuta USB MIDI</button>
@@ -1132,7 +1134,7 @@ export default function HelpPanel() {
           </div>
           <p>
             Diferente de carregar um instrumento direto numa camada do Rack, o Conversor serve pra transformar o
-            arquivo original (<code>.exs</code>, <code>.sf2</code>/<code>.sf3</code>,{' '}
+            arquivo original (<code>.mrq</code>, <code>.exs</code>, <code>.sf2</code>/<code>.sf3</code>,{' '}
             <code>.npno</code>, <code>.nsmp</code>, <code>.syx</code>, uma amostra solta ou áudio renderizado pelo
             Kontakt) num arquivo{' '}
             <code>.mrq</code> — o formato nativo do MRQ, que já guarda o áudio decodificado pronto pra tocar (abre
@@ -1180,6 +1182,12 @@ export default function HelpPanel() {
               <b>PRONTO</b> — não é mais necessário gerar um <code>.mrq</code> antes de liberar SoundFont.
             </li>
           </ol>
+          <div className="help-callout tip">
+            <b>v0.2.17 — agora o Conversor também ABRE <code>.mrq</code>:</b> selecione um instrumento nativo já
+            gerado e ele carrega presets, grupos, zonas e amostras FLAC sem recodificar. O item fica PRONTO, a
+            pré-escuta funciona e você pode escolher <b>Exportar .sf2</b> ou <b>Exportar .sf3</b> diretamente.
+            Arquivos antigos com o erro <code>invalid block size, must be at least 16</code> são reparados na leitura.
+          </div>
           <div className="help-callout tip">
             <b>v0.2.16 — escolha direta de formato:</b> ao salvar <code>.sf2</code>/<code>.sf3</code> sem ter um{' '}
             <code>.mrq</code> na fila, o Conversor cria um <code>.mrq</code> temporário automaticamente, lê as amostras
