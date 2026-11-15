@@ -20,6 +20,7 @@ import {
   Piano,
   RefreshCw,
   Replace,
+  SlidersHorizontal,
   Split,
 } from 'lucide-react';
 
@@ -481,6 +482,31 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
         </Note>
       </section>
 
+      {/* ---------------- CONTROLES AO VIVO ---------------- */}
+      <section className="help-section" id="controles-ao-vivo">
+        <SectionHead
+          icon={SlidersHorizontal}
+          title="Controles ao Vivo — controles globais do instrumento inteiro"
+          purpose="Ajustar faixa, timbre e efeitos sobre todas as amostras e ouvir o som final em tempo real, como vai sair no rack ao vivo"
+        />
+        <Figure
+          src="help-live-controls.svg"
+          alt="Controles ao Vivo: faixa e tecla raiz, knobs de timbre, efeitos ao vivo e teclado para pré-escuta"
+          caption="Os controles atuam sobre todas as amostras do instrumento (INSTRUMENTO INTEIRO). Mexa enquanto toca e ouça o som final na hora."
+        />
+        <ol>
+          <li><b>Onde abrir:</b> botão <b>Controles ao Vivo</b> ao lado do <b>Editar mapeamento</b> (Conversor), no cabeçalho do <b>Estúdio</b>, ou no ícone de sliders da barra lateral. A página abre já com o instrumento selecionado.</li>
+          <li><b>Faixa / raiz (steppers):</b> <b>NOTA MIN/MAX</b> limitam as teclas que tocam; <b>VELOCIDADE MIN/MAX</b> limitam a força da tecla; <b>TECLA RAIZ</b> é a tecla que toca o sample na afinação original (o padrão é a raiz mais comum do instrumento — mude pra transpor tudo).</li>
+          <li><b>Timbre (knobs):</b> <b>VOLUME dB</b>, <b>PAN</b>, <b>AFINACAO cents</b>, <b>ATAQUE/RELEASE/SUSTAIN</b> (envelope), <b>EQ GRAVES/MEDIOS/AGUDOS</b> e <b>DRIVE</b>. Arraste pra cima/baixo, use a roda do mouse ou as setas; duplo-clique volta ao padrão.</li>
+          <li><b>EFEITOS / AO VIVO:</b> <b>REVERB</b> com <b>TAMANHO</b>, <b>DAMP</b>, <b>PRE-DELAY</b> e <b>COR</b>; <b>STEREO</b> (largura); <b>DELAY</b> com <b>TEMPO</b> e <b>FEEDBACK</b>; <b>CHORUS</b> com <b>RATE</b> e <b>DEPTH</b>. O escopo é sempre <b>INSTRUMENTO INTEIRO</b> — todas as amostras juntas.</li>
+          <li><b>Tocar e ouvir:</b> teclado na tela, teclas do computador (a tecla <b>A</b> toca a tecla raiz) ou teclado USB MIDI pelo botão <b>Conectar MIDI</b>. Mexa nos knobs enquanto toca: o som muda na hora.</li>
+          <li><b>Salvo automaticamente:</b> os ajustes ficam salvos por instrumento no computador — feche e reabra depois que voltam. O botão <b>Padrões</b> restaura tudo.</li>
+        </ol>
+        <Note kind="info">
+          <Info size={13} /> A pré-escuta usa o mesmo motor de som do rack (MrqLayerVoice) com uma cadeia de efeitos ao vivo — o timbre que você ouve aqui é o timbre final que o instrumento terá no rack.
+        </Note>
+      </section>
+
       {/* ---------------- PROBLEMAS COMUNS ---------------- */}
       <section className="help-section" id="auto-sampler-problemas">
         <SectionHead
@@ -507,6 +533,7 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Qual .dmg baixar no Mac?</b></td><td>Mac Intel e Apple Silicon (M1/M2/M3/M4) precisam de instaladores diferentes.</td><td>Desde a <b>v0.2.20</b> há dois .dmgs: <code>*_x86_64.dmg</code> para <b>Mac Intel</b> (inclui MacBook Pro com <b>macOS 10.15 Catalina</b>) e <code>*_aarch64.dmg</code> para <b>Apple Silicon</b>. Baixe o da sua máquina — o outro não abre.</td></tr>
               <tr><td><b>Teclado USB não aparece no Estúdio</b></td><td>Web MIDI bloqueado pelo navegador/sistema ou teclado não conectado.</td><td>Conecte o teclado USB, clique em <b>Conectar MIDI</b> e aguarde a lista. No Chrome/Edge funciona direto; em outros navegadores pode ser preciso permitir o acesso. Enquanto isso, o teclado na tela funciona normalmente.</td></tr>
               <tr><td><b>Edição sumiu ao fechar o Estúdio</b></td><td>Fechou sem salvar.</td><td>O app pergunta antes de descartar edições não salvas. Use <b>Salvar</b> ou <b>Salvar como…</b> para gravar no .mrq.</td></tr>
+              <tr><td><b>Controles ao Vivo não tocam nada</b></td><td>Nenhum instrumento aberto, faixa NOTA MIN/MAX fora das teclas tocadas, ou áudio do navegador bloqueado.</td><td>Abra um .mrq (botão <b>Abrir .mrq…</b> ou um instrumento convertido), confira se a faixa cobre as teclas que você toca e clique/toque uma vez para ativar o áudio.</td></tr>
             </tbody>
           </table>
         </div>

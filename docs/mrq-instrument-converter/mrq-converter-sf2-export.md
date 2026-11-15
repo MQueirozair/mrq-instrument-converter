@@ -222,3 +222,38 @@ Novo fluxo reaproveitando os componentes existentes (nada foi duplicado):
 - Testes: `scripts/test-converted-instruments.mjs` (8 casos) + 4 testes
   Rust em `writer.rs` (cópia verbatim, trim com ajuste de loop, loop
   inválido desativado, trim fora do limite falha sem tocar o destino).
+
+## 14. v0.2.22 — Controles ao Vivo
+
+Nova página com os controles globais do instrumento inteiro (escopo
+"INSTRUMENTO INTEIRO"), pra pré-escutar o som final como ele vai sair num
+rack de instrumentos ao vivo. Reaproveita o motor existente, sem duplicar:
+
+- **Entrada:** botão "Controles ao Vivo" ao lado do "Editar mapeamento"
+  (Conversor), no cabeçalho do Estúdio e ícone de sliders na barra lateral.
+  Abre já com o `.mrq` selecionado (convertido ou origem `.mrq`).
+- **Controles (27):** NOTA MIN/MAX, TECLA RAIZ, VELOCIDADE MIN/MAX
+  (steppers) + VOLUME dB, PAN, AFINACAO cents, ATAQUE/RELEASE/SUSTAIN,
+  EQ GRAVES/MEDIOS/AGUDOS, DRIVE (knobs) + EFEITOS/AO VIVO: REVERB
+  (TAMANHO/DAMP/PRE-DELAY/COR), STEREO, DELAY (TEMPO/FEEDBACK), CHORUS
+  (RATE/DEPTH). Knob novo (`Knob.tsx`): arraste vertical, roda do mouse,
+  setas do teclado, duplo-clique reseta.
+- **Motor:** `LiveInstrumentEngine` = `MrqLayerVoice` (carrega/toca o
+  `.mrq`) + gate de envelope global com contagem de notas (o `noteOff` da
+  voz é adiado até o gate fechar, então RELEASE longo funciona de verdade)
+  + `LiveFxChain` (EQ 3 bandas → drive → chorus → delay com realimentação
+  filtrada → largura mid/side mono-safe → master; reverb em envio com IR
+  estéreo gerada, pré-delay e cor). TECLA RAIZ transpõe em relação à
+  `rootNote` mais comum das zonas; AFINACAO usa o pitch bend da voz
+  (afeta notas já soando). O `rackEngine` global (singleton do rack) não
+  é usado — engine dedicado, sem interferência.
+- **Tocar:** teclado na tela (`PlayableKeyboard`), teclas do computador
+  ("A" = tecla raiz, mesmo mapa do MidiControllerDialog) e teclado USB
+  MIDI via Web MIDI (mesmo padrão do Estúdio).
+- **Persistência:** parâmetros salvos por instrumento em `localStorage`
+  (`mrq.liveControls.v1`); sem parâmetros salvos, a tecla raiz padrão é a
+  raiz de referência do instrumento (transposição zero). Botão "Padrões"
+  restaura e apaga o salvo.
+- **Testes:** `scripts/test-live-controls.mjs` (18 casos: definições,
+  clamp/ordenação de faixas, mapeamentos dB/IR/largura/drive, raiz de
+  referência, faixa do teclado, nomes de nota, persistência).

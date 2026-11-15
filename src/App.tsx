@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Settings, HelpCircle, LibraryBig } from 'lucide-react';
+import { Settings, HelpCircle, LibraryBig, SlidersHorizontal } from 'lucide-react';
 import { useStore } from './state/useStore';
 import TitleBar from './components/TitleBar';
 import InstrumentConverter from './components/InstrumentConverter';
 import InstrumentStudio from './components/InstrumentStudio';
+import LiveControlsPage from './components/LiveControlsPage';
 import HelpPanel from './components/HelpPanel';
 import SettingsModal from './components/SettingsModal';
 
@@ -32,8 +33,11 @@ export default function App() {
   // v0.2.21: 'studio' = Estúdio de Instrumentos Convertidos (gerenciador +
   // editor de samples + teste MIDI). `studioPath` abre já um .mrq específico
   // (vindo do painel "Instrumentos Convertidos" do Conversor).
-  const [view, setView] = useState<'converter' | 'studio'>('converter');
+  // v0.2.22: 'live' = Controles ao Vivo (controles globais do instrumento
+  // inteiro + pré-escuta do som final). `livePath` abre já um .mrq específico.
+  const [view, setView] = useState<'converter' | 'studio' | 'live'>('converter');
   const [studioPath, setStudioPath] = useState<string | null>(null);
+  const [livePath, setLivePath] = useState<string | null>(null);
 
   useEffect(() => {
     init();
@@ -64,6 +68,16 @@ export default function App() {
           >
             <LibraryBig size={19} strokeWidth={2} />
           </button>
+          <button
+            className={`rail-btn ${view === 'live' && !helpOpen ? 'active' : ''}`}
+            title="Controles ao Vivo — controles globais do instrumento inteiro e pré-escuta do som final"
+            onClick={() => {
+              setHelpOpen(false);
+              setView((v) => (v === 'live' ? 'converter' : 'live'));
+            }}
+          >
+            <SlidersHorizontal size={19} strokeWidth={2} />
+          </button>
           <button className={`rail-btn ${helpOpen ? 'active' : ''}`} title="Ajuda / Sobre o MRQ" onClick={() => setHelpOpen((v) => !v)}>
             <HelpCircle size={19} strokeWidth={2} />
           </button>
@@ -80,12 +94,26 @@ export default function App() {
                 key={studioPath ?? 'empty'}
                 initialPath={studioPath}
                 onClose={() => setView('converter')}
+                onOpenLiveControls={(filePath) => {
+                  setLivePath(filePath);
+                  setView('live');
+                }}
+              />
+            ) : view === 'live' ? (
+              <LiveControlsPage
+                key={livePath ?? 'empty'}
+                initialPath={livePath}
+                onClose={() => setView('converter')}
               />
             ) : (
               <InstrumentConverter
                 onOpenInStudio={(filePath) => {
                   setStudioPath(filePath);
                   setView('studio');
+                }}
+                onOpenLiveControls={(filePath) => {
+                  setLivePath(filePath);
+                  setView('live');
                 }}
               />
             )}

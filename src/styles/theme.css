@@ -2240,6 +2240,36 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .studio-engine-status { font-size: 12px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
 .studio-engine-status.ok { color: var(--green, #84e1ad); }
 .studio-engine-status.bad { color: var(--red, #ff7b72); }
+
+/* v0.2.22 — Controles ao Vivo (knobs + página) */
+.live-page { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 14px; gap: 14px; overflow-y: auto; }
+.live-header { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.live-title { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: 1; }
+.live-title strong { font-size: 15px; }
+.live-title span { color: var(--text-2); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.live-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.live-loading { display: flex; align-items: center; gap: 8px; color: var(--text-2); padding: 18px; }
+.live-error { background: #3a1d1d; border: 1px solid #7a2e2e; color: #ffb4ab; border-radius: 8px; padding: 10px 14px; font-size: 13px; }
+.live-steppers { display: flex; gap: 10px; flex-wrap: wrap; }
+.live-stepper { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; display: flex; flex-direction: column; gap: 5px; min-width: 128px; }
+.live-stepper-label { font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--text-2); }
+.live-stepper-row { display: flex; align-items: center; gap: 5px; }
+.live-stepper-value { background: #0a0d10; border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 14px; font-weight: 700; color: var(--text-1); min-width: 44px; text-align: center; }
+.live-stepper-row button { background: var(--panel2); border: 1px solid var(--border); color: var(--text-1); border-radius: 6px; width: 30px; height: 28px; font-size: 15px; cursor: pointer; }
+.live-stepper-row button:hover { border-color: var(--accent); }
+.live-stepper-note { font-size: 11px; color: var(--mrq-cyan, #4dd0e1); font-weight: 700; }
+.live-knobs { display: flex; gap: 8px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.knob { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; }
+.knob.disabled { opacity: .45; }
+.knob-label { font-size: 9.5px; font-weight: 800; letter-spacing: .04em; color: var(--text-2); text-align: center; }
+.knob-dial { cursor: ns-resize; border-radius: 50%; outline: none; }
+.knob-dial:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.knob-value { background: #0a0d10; border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; font-size: 11.5px; color: var(--text-1); min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+.live-fx-head { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.live-fx-title { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--text-1); }
+.live-scope { margin-left: auto; background: #0a0d10; border: 1px solid var(--border); color: var(--text-1); border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
+.live-keyboard { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.live-hint { margin: 0; font-size: 12px; color: var(--text-2); }
 @media (max-width: 900px) {
   .studio-body { grid-template-columns: 1fr; }
   .studio-samples { max-height: 220px; }

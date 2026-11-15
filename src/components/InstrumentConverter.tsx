@@ -63,6 +63,7 @@ import {
   Plus,
   Save,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Upload,
@@ -264,7 +265,13 @@ function logConverterError(context: string, err: unknown) {
   }
 }
 
-export default function InstrumentConverter({ onOpenInStudio }: { onOpenInStudio?: (path: string) => void } = {}) {
+export default function InstrumentConverter({
+  onOpenInStudio,
+  onOpenLiveControls,
+}: {
+  onOpenInStudio?: (path: string) => void;
+  onOpenLiveControls?: (path: string) => void;
+} = {}) {
   // Segunda camada de defesa: o item de navegação já fica escondido fora do
   // Tauri (ver IconRail.tsx), mas se este componente for alcançado de outro
   // jeito mesmo assim, mostra um aviso claro em vez de deixar os diálogos de
@@ -279,10 +286,16 @@ export default function InstrumentConverter({ onOpenInStudio }: { onOpenInStudio
       </div>
     );
   }
-  return <InstrumentConverterInner onOpenInStudio={onOpenInStudio} />;
+  return <InstrumentConverterInner onOpenInStudio={onOpenInStudio} onOpenLiveControls={onOpenLiveControls} />;
 }
 
-function InstrumentConverterInner({ onOpenInStudio }: { onOpenInStudio?: (path: string) => void }) {
+function InstrumentConverterInner({
+  onOpenInStudio,
+  onOpenLiveControls,
+}: {
+  onOpenInStudio?: (path: string) => void;
+  onOpenLiveControls?: (path: string) => void;
+}) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
@@ -785,6 +798,7 @@ function InstrumentConverterInner({ onOpenInStudio }: { onOpenInStudio?: (path: 
               item={selected}
               onConvert={() => void convertItem(selected)}
               onOpenMapping={() => setMappingEditorItemId(selected.id)}
+              onOpenLiveControls={onOpenLiveControls}
               onExportSoundFont={(ext) => void exportItemToSoundFont(selected, ext)}
             />
           ) : (
@@ -994,11 +1008,13 @@ function PreviewStrip({
   item,
   onConvert,
   onOpenMapping,
+  onOpenLiveControls,
   onExportSoundFont,
 }: {
   item: QueueItem;
   onConvert: () => void;
   onOpenMapping: () => void;
+  onOpenLiveControls?: (path: string) => void;
   onExportSoundFont: (ext: 'sf2' | 'sf3') => void;
 }) {
   const [playing, setPlaying] = useState(false);
@@ -1087,6 +1103,23 @@ function PreviewStrip({
             <Settings2 size={13} /> Editar mapeamento{item.editedInstrument ? ' •' : ''}
           </button>
         )}
+        {/* v0.2.22: Controles ao Vivo — controles globais do instrumento
+            inteiro (faixa, envelope, EQ, drive, efeitos) com pré-escuta do
+            som final. Precisa de um .mrq: o convertido ou a própria origem
+            quando ela já é .mrq. */}
+        {(() => {
+          const mrqPath = item.convertedPath ?? (item.format === 'mrq' ? item.path : undefined);
+          return (
+            <button
+              className="btn ghost small"
+              disabled={!mrqPath || !onOpenLiveControls}
+              title={mrqPath ? 'Abrir os Controles ao Vivo — ajustar o instrumento inteiro e ouvir o som final' : 'Converta primeiro para abrir os Controles ao Vivo'}
+              onClick={() => mrqPath && onOpenLiveControls?.(mrqPath)}
+            >
+              <SlidersHorizontal size={13} /> Controles ao Vivo
+            </button>
+          );
+        })()}
         {/* v0.2.16: os TRÊS formatos são escolhas reais. SF2/SF3 não exigem
             mais salvar .mrq antes — clicar faz a conversão temporária e salva
             direto no formato escolhido. */}

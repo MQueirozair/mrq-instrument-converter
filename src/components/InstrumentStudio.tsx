@@ -34,6 +34,7 @@ import {
   Piano,
   Save,
   Settings2,
+  SlidersHorizontal,
   X,
 } from 'lucide-react';
 import {
@@ -67,6 +68,8 @@ export interface InstrumentStudioProps {
   initialPath: string | null;
   /** Volta pra tela do Conversor. */
   onClose: () => void;
+  /** v0.2.22: abre os Controles ao Vivo com este instrumento. */
+  onOpenLiveControls?: (path: string) => void;
 }
 
 interface ZoneRef {
@@ -79,7 +82,7 @@ function cloneModel(model: MrqInstrumentModel): MrqInstrumentModel {
   return JSON.parse(JSON.stringify(model)) as MrqInstrumentModel;
 }
 
-export default function InstrumentStudio({ initialPath, onClose }: InstrumentStudioProps) {
+export default function InstrumentStudio({ initialPath, onClose, onOpenLiveControls }: InstrumentStudioProps) {
   const pushToast = useStore((s) => s.pushToast);
 
   const [path, setPath] = useState<string | null>(initialPath);
@@ -499,6 +502,14 @@ export default function InstrumentStudio({ initialPath, onClose }: InstrumentStu
         <div className="studio-actions">
           <button className="btn ghost small" onClick={() => setMappingOpen(true)} title="Abrir o Editor de Mapeamento (zonas visuais)">
             <Settings2 size={13} /> Editor de Mapeamento
+          </button>
+          <button
+            className="btn ghost small"
+            disabled={!onOpenLiveControls}
+            title="Abrir os Controles ao Vivo — controles globais do instrumento inteiro e pré-escuta do som final"
+            onClick={() => onOpenLiveControls?.(path)}
+          >
+            <SlidersHorizontal size={13} /> Controles ao Vivo
           </button>
           <button className="btn ghost small" onClick={() => void handleSave(false)} disabled={saving || !dirty} title="Salvar as edições num arquivo novo">
             <Save size={13} /> Salvar como…
