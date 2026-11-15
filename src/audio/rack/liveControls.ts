@@ -45,6 +45,37 @@ export interface LiveParams {
   chorus: number;
   chorusRateHz: number;
   chorusDepth: number;
+  // --- Ferramentas raras (v0.2.23) ---
+  comp: number;
+  phaserRate: number;
+  phaserDepth: number;
+  phaserMix: number;
+  flangerRate: number;
+  flangerDepth: number;
+  flangerFeedback: number;
+  flangerMix: number;
+  tremoloRate: number;
+  tremoloDepth: number;
+  crushBits: number;
+  crushRate: number;
+  crushMix: number;
+  shimmerMix: number;
+  octaverMix: number;
+  gateThreshold: number;
+  vibratoRate: number;
+  vibratoDepth: number;
+  autopanRate: number;
+  autopanDepth: number;
+  exciter: number;
+  ringFreq: number;
+  ringMix: number;
+  tape: number;
+  arpRate: number;
+  arpRange: number;
+  velCurve: number;
+  // --- Novidades inventadas (v0.2.23) ---
+  pressure: number;
+  ecoVivo: number;
 }
 
 export type LiveParamKey = keyof LiveParams;
@@ -92,6 +123,37 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   chorus: { key: 'chorus', label: 'CHORUS %', min: 0, max: 100, step: 1, format: f1, default: 0 },
   chorusRateHz: { key: 'chorusRateHz', label: 'RATE Hz', min: 0.05, max: 10, step: 0.05, format: f2, default: 0.7 },
   chorusDepth: { key: 'chorusDepth', label: 'DEPTH %', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  // --- Ferramentas raras (v0.2.23) ---
+  comp: { key: 'comp', label: 'COMP %', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  phaserRate: { key: 'phaserRate', label: 'PHASER RATE', min: 0.05, max: 10, step: 0.05, format: f2, default: 0.5 },
+  phaserDepth: { key: 'phaserDepth', label: 'PHASER DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  phaserMix: { key: 'phaserMix', label: 'PHASER MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  flangerRate: { key: 'flangerRate', label: 'FLANGER RATE', min: 0.05, max: 10, step: 0.05, format: f2, default: 0.3 },
+  flangerDepth: { key: 'flangerDepth', label: 'FLANGER DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  flangerFeedback: { key: 'flangerFeedback', label: 'FLANGER FB', min: 0, max: 90, step: 1, format: f1, default: 40 },
+  flangerMix: { key: 'flangerMix', label: 'FLANGER MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  tremoloRate: { key: 'tremoloRate', label: 'TREMOLO RATE', min: 0.5, max: 20, step: 0.1, format: f1, default: 5 },
+  tremoloDepth: { key: 'tremoloDepth', label: 'TREMOLO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  crushBits: { key: 'crushBits', label: 'CRUSH BITS', min: 2, max: 16, step: 1, format: (v) => String(Math.round(v)), default: 8 },
+  crushRate: { key: 'crushRate', label: 'CRUSH TAXA', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  crushMix: { key: 'crushMix', label: 'CRUSH MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  shimmerMix: { key: 'shimmerMix', label: 'SHIMMER', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  octaverMix: { key: 'octaverMix', label: 'OCTAVER', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  gateThreshold: { key: 'gateThreshold', label: 'GATE dB', min: -80, max: 0, step: 1, format: f1, default: -80 },
+  vibratoRate: { key: 'vibratoRate', label: 'VIBRATO RATE', min: 0.5, max: 12, step: 0.1, format: f1, default: 5.5 },
+  vibratoDepth: { key: 'vibratoDepth', label: 'VIBRATO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 30 },
+  autopanRate: { key: 'autopanRate', label: 'AUTO-PAN RATE', min: 0.05, max: 10, step: 0.05, format: f2, default: 0.5 },
+  autopanDepth: { key: 'autopanDepth', label: 'AUTO-PAN DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  exciter: { key: 'exciter', label: 'EXCITER', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  ringFreq: { key: 'ringFreq', label: 'RING FREQ', min: 0.5, max: 200, step: 0.5, format: f1, default: 30 },
+  ringMix: { key: 'ringMix', label: 'RING MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  tape: { key: 'tape', label: 'TAPE', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  arpRate: { key: 'arpRate', label: 'ARP TAXA ms', min: 0, max: 1000, step: 10, format: f1, default: 0 },
+  arpRange: { key: 'arpRange', label: 'ARP ALCANCE', min: 0, max: 24, step: 1, format: (v) => String(Math.round(v)), default: 12 },
+  velCurve: { key: 'velCurve', label: 'VELOCIDADE CURVA', min: -100, max: 100, step: 1, format: f1, default: 0 },
+  // --- Novidades inventadas (v0.2.23) ---
+  pressure: { key: 'pressure', label: 'PRESSÃO', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  ecoVivo: { key: 'ecoVivo', label: 'ECO VIVO', min: 0, max: 100, step: 1, format: f1, default: 0 },
 };
 
 /** Ordem dos knobs da linha 1 (depois dos steppers). */
@@ -108,6 +170,27 @@ export const LIVE_KNOBS_FX: LiveParamKey[] = [
 
 /** Ordem dos steppers (faixa/raiz). */
 export const LIVE_STEPPERS: LiveParamKey[] = ['noteMin', 'noteMax', 'rootKey', 'velMin', 'velMax'];
+
+/** Knobs das 15 ferramentas raras (v0.2.23). */
+export const LIVE_KNOBS_TOOLS: LiveParamKey[] = [
+  'comp',
+  'phaserRate', 'phaserDepth', 'phaserMix',
+  'flangerRate', 'flangerDepth', 'flangerFeedback', 'flangerMix',
+  'tremoloRate', 'tremoloDepth',
+  'crushBits', 'crushRate', 'crushMix',
+  'shimmerMix', 'octaverMix',
+  'gateThreshold',
+  'vibratoRate', 'vibratoDepth',
+  'autopanRate', 'autopanDepth',
+  'exciter',
+  'ringFreq', 'ringMix',
+  'tape',
+  'arpRate', 'arpRange',
+  'velCurve',
+];
+
+/** Knobs das 2 novidades inventadas (v0.2.23). */
+export const LIVE_KNOBS_NEW: LiveParamKey[] = ['pressure', 'ecoVivo'];
 
 export function defaultLiveParams(): LiveParams {
   const out = {} as LiveParams;
@@ -216,6 +299,90 @@ export function noteName(note: number): string {
   const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const n = Math.round(note);
   return `${names[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+// ---------------------------------------------------------------------------
+// Mapeamentos das ferramentas raras e novidades (v0.2.23)
+// ---------------------------------------------------------------------------
+
+/** COMP % (0..100) → parâmetros do compressor master (cola). */
+export function compressorParams(compPct: number): { thresholdDb: number; ratio: number; makeupDb: number; attackSec: number; releaseSec: number } {
+  const t = Math.min(100, Math.max(0, compPct)) / 100;
+  return {
+    thresholdDb: -6 - t * 30, // 0% → -6dB (quase nada), 100% → -36dB
+    ratio: 1 + t * 9, // 0% → 1:1 (bypass), 100% → 10:1
+    makeupDb: t * 12, // compensação de nível
+    attackSec: 0.01,
+    releaseSec: 0.15,
+  };
+}
+
+/**
+ * Curva de velocity (VELOCIDADE CURVA -100..+100, 0 = linear): positivo
+ * enfatiza as notas fortes (expande), negativo equaliza (comprime as
+ * suaves pra cima). v' = 127 * (v/127)^gamma, gamma em [0.3, 3].
+ */
+export function applyVelocityCurve(velocity: number, curve: number): number {
+  const v = Math.min(127, Math.max(1, velocity)) / 127;
+  const gamma = Math.min(3, Math.max(0.3, 1 + curve / 50));
+  return Math.min(127, Math.max(1, Math.round(127 * Math.pow(v, gamma))));
+}
+
+/**
+ * Curva de quantização do bitcrusher: BITS (2..16) → passos de quantização.
+ * 16 bits = ~transparente; 2 bits = bem degradado.
+ */
+export function bitcrusherSteps(bits: number): number {
+  const b = Math.min(16, Math.max(2, Math.round(bits)));
+  return Math.pow(2, b);
+}
+
+/** CRUSH TAXA % (0..100) → corte do lowpass do bitcrusher (500Hz..18kHz). */
+export function crushLowpassHz(ratePct: number): number {
+  const t = Math.min(100, Math.max(0, ratePct)) / 100;
+  return 500 + t * 17500;
+}
+
+/**
+ * Padrão do arpejador (sobe e desce): offsets em semitons a partir da nota
+ * tocada, cobrindo ARP ALCANCE. Ex.: alcance 12 → [0, 7, 12, 7].
+ */
+export function arpNoteOffsets(rangeSemitones: number): number[] {
+  const range = Math.min(24, Math.max(0, Math.round(rangeSemitones)));
+  if (range <= 0) return [0];
+  const fifth = Math.min(7, range);
+  const offsets = [0, fifth];
+  if (range > fifth) offsets.push(range, fifth);
+  return offsets;
+}
+
+/**
+ * NOVIDADE 1 — PRESSÃO: macro de caráter ao vivo. Um knob só que ajusta
+ * drive + presença (EQ agudos) + cola (compressor) + largura + cauda de
+ * reverb de forma musicalmente coerente, como um "master de palco".
+ * Devolve os valores absolutos que os outros controles assumem.
+ */
+export function pressureMacro(pressurePct: number): { driveDb: number; eqHighDb: number; comp: number; stereo: number; reverb: number } {
+  const t = Math.min(100, Math.max(0, pressurePct)) / 100;
+  return {
+    driveDb: t * 10, // 0 → 10dB de saturação
+    eqHighDb: t * 6, // presença
+    comp: t * 70, // cola
+    stereo: 50 + t * 40, // abre a imagem
+    reverb: t * 35, // cauda de palco
+  };
+}
+
+/**
+ * NOVIDADE 2 — ECO VIVO: o feedback efetivo do delay em função da densidade
+ * de notas tocadas (0..1). Tocando denso, o eco se fecha (não enlama);
+ * tocando espaçado, abre espaço. `ecoVivoPct` é a força do comportamento.
+ */
+export function ecoVivoFeedback(baseFeedbackPct: number, ecoVivoPct: number, density: number): number {
+  const base = Math.min(95, Math.max(0, baseFeedbackPct));
+  const strength = Math.min(100, Math.max(0, ecoVivoPct)) / 100;
+  const d = Math.min(1, Math.max(0, density));
+  return base * (1 - strength * d * 0.8);
 }
 
 // ---------------------------------------------------------------------------

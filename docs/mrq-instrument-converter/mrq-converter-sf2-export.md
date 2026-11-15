@@ -257,3 +257,31 @@ rack de instrumentos ao vivo. Reaproveita o motor existente, sem duplicar:
 - **Testes:** `scripts/test-live-controls.mjs` (18 casos: definições,
   clamp/ordenação de faixas, mapeamentos dB/IR/largura/drive, raiz de
   referência, faixa do teclado, nomes de nota, persistência).
+
+## 15. v0.2.23 — correção do estéreo + 15 ferramentas + 2 novidades
+
+- **Correção crítica (estéreo):** a largura estéreo da v0.2.22 (dual-mono +
+  mid/side) deixava o canal direito mudo — só saía som de um lado.
+  Substituída por um alargador **Haas** (cópia do canal direito atrasada
+  9ms misturada com o direto): os dois canais sempre funcionam, inclusive
+  com fonte mono. STEREO 0% = estéreo normal, 100% = largo.
+- **Qualidade:** limiter de teto (−1dB, sempre ativo) na saída contra
+  clipping de drive+EQ; IR do reverb com decaimentos diferentes por canal
+  (decorrelação estéreo).
+- **15 ferramentas raras** (`LiveToolsChain`, nós nativos, pesquisadas no
+  que há de moderno em FX ao vivo — openDAW/smplr/bibliotecas Web Audio):
+  compressor de cola, phaser (4 allpass + LFO), flanger, tremolo,
+  bitcrusher (quantização + lowpass), shimmer (oitava acima no reverb,
+  pitch granular do RackEngine), oitavador (oitava abaixo, em paralelo),
+  gate (detecção por analyser), vibrato, auto-pan, exciter (agudos
+  saturados), ring modulator, tape (wow/flutter pseudo-aleatório com 2
+  LFOs), arpejador (engine, a partir da nota mais grave segurada) e curva
+  de velocity (engine). Total: 56 controles.
+- **2 novidades inventadas:** **PRESSÃO** — macro de caráter de palco
+  (um knob ajusta drive + presença + cola + largura + reverb de forma
+  coerente, movendo os outros knobs); **ECO VIVO** — delay adaptativo à
+  densidade de notas (o engine mede ataques/2s e fecha o feedback tocando
+  denso, abre espaçado).
+- **Testes:** `test-live-controls` ampliado pra 25 casos (56 controles,
+  compressor, curva de velocity, bitcrusher, arpejo, macro Pressão, Eco
+  Vivo).

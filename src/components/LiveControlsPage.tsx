@@ -19,7 +19,9 @@ import { ArrowLeft, FolderOpen, Loader2, Piano, RotateCcw, Usb } from 'lucide-re
 import { LiveInstrumentEngine } from '../audio/rack/LiveInstrumentEngine';
 import {
   LIVE_KNOBS_FX,
+  LIVE_KNOBS_NEW,
   LIVE_KNOBS_ROW1,
+  LIVE_KNOBS_TOOLS,
   LIVE_PARAM_DEFS,
   LIVE_STEPPERS,
   clearLiveParams,
@@ -28,6 +30,7 @@ import {
   keyboardRangeFor,
   loadLiveParams,
   noteName,
+  pressureMacro,
   saveLiveParams,
   type LiveParamKey,
   type LiveParams,
@@ -148,7 +151,14 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const updateParam = useCallback((key: LiveParamKey, value: number) => {
     resumeAudio();
     setParams((prev) => {
-      const next = { ...prev, [key]: value };
+      let next = { ...prev, [key]: value };
+      // NOVIDADE 1 — PRESSÃO: macro de caráter ao vivo. Mexer no knob ajusta
+      // drive + presença + cola + largura + reverb de forma coerente (os
+      // outros knobs se movem junto, dá pra ajustar depois individualmente).
+      if (key === 'pressure') {
+        const macro = pressureMacro(value);
+        next = { ...next, driveDb: macro.driveDb, eqHighDb: macro.eqHighDb, comp: macro.comp, stereo: macro.stereo, reverb: macro.reverb };
+      }
       engineRef.current?.setParams(next);
       const p = pathRef.current;
       if (p) {
@@ -393,6 +403,54 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           </div>
           <div className="live-knobs">
             {LIVE_KNOBS_FX.map((key) => {
+              const def = LIVE_PARAM_DEFS[key];
+              return (
+                <Knob
+                  key={key}
+                  label={def.label}
+                  value={params[key]}
+                  min={def.min}
+                  max={def.max}
+                  step={def.step}
+                  defaultValue={def.default}
+                  format={def.format}
+                  onChange={(v) => updateParam(key, v)}
+                />
+              );
+            })}
+          </div>
+
+          {/* ---------- Ferramentas raras (v0.2.23) ---------- */}
+          <div className="live-fx-head">
+            <span className="live-fx-title">FERRAMENTAS</span>
+            <span className="live-fx-sub">compressor · phaser · flanger · tremolo · bitcrusher · shimmer · oitavador · gate · vibrato · auto-pan · exciter · ring mod · tape · arpejador · curva de velocity</span>
+          </div>
+          <div className="live-knobs">
+            {LIVE_KNOBS_TOOLS.map((key) => {
+              const def = LIVE_PARAM_DEFS[key];
+              return (
+                <Knob
+                  key={key}
+                  label={def.label}
+                  value={params[key]}
+                  min={def.min}
+                  max={def.max}
+                  step={def.step}
+                  defaultValue={def.default}
+                  format={def.format}
+                  onChange={(v) => updateParam(key, v)}
+                />
+              );
+            })}
+          </div>
+
+          {/* ---------- Novidades (v0.2.23) ---------- */}
+          <div className="live-fx-head">
+            <span className="live-fx-title">NOVIDADES</span>
+            <span className="live-fx-sub">PRESSÃO: macro de caráter de palco (drive + presença + cola + largura + reverb) · ECO VIVO: delay que se fecha tocando denso e abre espaçado</span>
+          </div>
+          <div className="live-knobs">
+            {LIVE_KNOBS_NEW.map((key) => {
               const def = LIVE_PARAM_DEFS[key];
               return (
                 <Knob

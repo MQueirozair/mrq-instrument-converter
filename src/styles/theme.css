@@ -2267,6 +2267,7 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .knob-value { background: #0a0d10; border: 1px solid var(--border); border-radius: 5px; padding: 2px 6px; font-size: 11.5px; color: var(--text-1); min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
 .live-fx-head { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
 .live-fx-title { font-size: 12px; font-weight: 800; letter-spacing: .06em; color: var(--text-1); }
+.live-fx-sub { font-size: 11.5px; color: var(--text-2); }
 .live-scope { margin-left: auto; background: #0a0d10; border: 1px solid var(--border); color: var(--text-1); border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; }
 .live-keyboard { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
 .live-hint { margin: 0; font-size: 12px; color: var(--text-2); }

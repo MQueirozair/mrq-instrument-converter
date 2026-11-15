@@ -38,6 +38,8 @@ const {
   LIVE_PARAM_DEFS,
   LIVE_KNOBS_ROW1,
   LIVE_KNOBS_FX,
+  LIVE_KNOBS_TOOLS,
+  LIVE_KNOBS_NEW,
   LIVE_STEPPERS,
   defaultLiveParams,
   clampLiveParams,
@@ -53,6 +55,13 @@ const {
   referenceRootFromZones,
   keyboardRangeFor,
   noteName,
+  compressorParams,
+  applyVelocityCurve,
+  bitcrusherSteps,
+  crushLowpassHz,
+  arpNoteOffsets,
+  pressureMacro,
+  ecoVivoFeedback,
   loadLiveParams,
   saveLiveParams,
   clearLiveParams,
@@ -68,9 +77,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('27 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('56 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 27);
+  assert.equal(keys.length, 56);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);
@@ -78,12 +87,32 @@ test('27 controles definidos, todos com min < max e padrão dentro da faixa', ()
   }
 });
 
-test('ordem das linhas: 5 steppers + 10 knobs + 12 knobs de FX = 27', () => {
+test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades = 56', () => {
   assert.equal(LIVE_STEPPERS.length, 5);
   assert.equal(LIVE_KNOBS_ROW1.length, 10);
   assert.equal(LIVE_KNOBS_FX.length, 12);
-  const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX];
-  assert.equal(new Set(all).size, 27);
+  assert.equal(LIVE_KNOBS_TOOLS.length, 27);
+  assert.equal(LIVE_KNOBS_NEW.length, 2);
+  const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW];
+  assert.equal(new Set(all).size, 56);
+});
+
+test('padrões das ferramentas: tudo desligado/neutro por padrão', () => {
+  const p = defaultLiveParams();
+  assert.equal(p.comp, 0);
+  assert.equal(p.phaserMix, 0);
+  assert.equal(p.flangerMix, 0);
+  assert.equal(p.crushMix, 0);
+  assert.equal(p.shimmerMix, 0);
+  assert.equal(p.octaverMix, 0);
+  assert.equal(p.gateThreshold, -80);
+  assert.equal(p.exciter, 0);
+  assert.equal(p.ringMix, 0);
+  assert.equal(p.tape, 0);
+  assert.equal(p.arpRate, 0);
+  assert.equal(p.velCurve, 0);
+  assert.equal(p.pressure, 0);
+  assert.equal(p.ecoVivo, 0);
 });
 
 test('padrões neutros: volume 0dB, pan centro, sustain 100%, efeitos zerados', () => {
@@ -220,6 +249,72 @@ test('persistência: JSON inválido no storage não quebra (volta aos padrões)'
   store.set('mrq.liveControls.v1', '{invalido');
   assert.equal(loadLiveParams('/x.mrq').volumeDb, 0);
   assert.equal(savedLiveParamsCount(), 0);
+});
+
+// --- Mapeamentos das ferramentas e novidades (v0.2.23) ---
+test('compressorParams: 0% ≈ bypass (1:1), 100% = cola forte (10:1)', () => {
+  const off = compressorParams(0);
+  assert.equal(off.ratio, 1);
+  assert.equal(off.thresholdDb, -6);
+  assert.equal(off.makeupDb, 0);
+  const full = compressorParams(100);
+  assert.equal(full.ratio, 10);
+  assert.equal(full.thresholdDb, -36);
+  assert.equal(full.makeupDb, 12);
+  const mid = compressorParams(50);
+  assert.ok(mid.ratio > off.ratio && mid.ratio < full.ratio);
+});
+
+test('applyVelocityCurve: 0 = linear; + enfatiza fortes, − equaliza', () => {
+  assert.equal(applyVelocityCurve(64, 0), 64);
+  assert.equal(applyVelocityCurve(127, 0), 127);
+  // curva positiva (expande): nota média fica mais fraca
+  assert.ok(applyVelocityCurve(64, 100) < 64);
+  // curva negativa (comprime): nota média fica mais forte
+  assert.ok(applyVelocityCurve(64, -100) > 64);
+  // extremos nunca saem de 1..127
+  assert.ok(applyVelocityCurve(1, 100) >= 1);
+  assert.ok(applyVelocityCurve(127, -100) <= 127);
+});
+
+test('bitcrusherSteps / crushLowpassHz', () => {
+  assert.equal(bitcrusherSteps(2), 4);
+  assert.equal(bitcrusherSteps(16), 65536);
+  assert.equal(bitcrusherSteps(8), 256);
+  assert.equal(crushLowpassHz(0), 500);
+  assert.equal(crushLowpassHz(100), 18000);
+  assert.ok(crushLowpassHz(50) > crushLowpassHz(10));
+});
+
+test('arpNoteOffsets: alcance 0 = [0]; 12 = [0,7,12,7]; limitado a 24', () => {
+  assert.deepEqual(arpNoteOffsets(0), [0]);
+  assert.deepEqual(arpNoteOffsets(12), [0, 7, 12, 7]);
+  assert.deepEqual(arpNoteOffsets(5), [0, 5]);
+  assert.deepEqual(arpNoteOffsets(99), [0, 7, 24, 7]);
+});
+
+test('pressureMacro: 0 = neutro; 100 = drive+presença+cola+largura+reverb', () => {
+  assert.deepEqual(pressureMacro(0), { driveDb: 0, eqHighDb: 0, comp: 0, stereo: 50, reverb: 0 });
+  const full = pressureMacro(100);
+  assert.equal(full.driveDb, 10);
+  assert.equal(full.eqHighDb, 6);
+  assert.equal(full.comp, 70);
+  assert.equal(full.stereo, 90);
+  assert.equal(full.reverb, 35);
+  const mid = pressureMacro(50);
+  assert.equal(mid.driveDb, 5);
+  assert.equal(mid.stereo, 70);
+});
+
+test('ecoVivoFeedback: densidade alta fecha o feedback; ecoVivo 0 = base', () => {
+  // sem Eco Vivo, feedback é o da base
+  assert.equal(ecoVivoFeedback(35, 0, 1), 35);
+  // densidade 0 (espaçado): feedback cheio
+  assert.equal(ecoVivoFeedback(35, 100, 0), 35);
+  // densidade 1 (denso) com Eco Vivo cheio: fecha 80%
+  assert.ok(Math.abs(ecoVivoFeedback(35, 100, 1) - 7) < 0.001);
+  // densidade média: meio do caminho
+  assert.ok(Math.abs(ecoVivoFeedback(35, 100, 0.5) - 21) < 0.001);
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);
