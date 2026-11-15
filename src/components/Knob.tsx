@@ -1,8 +1,9 @@
 /**
- * Knob giratório premium dos Controles ao Vivo (v0.2.25) — visual de
- * sampler profissional: corpo circular escuro com profundidade, arco
- * luminoso azul/ciano proporcional ao valor, ponteiro de alta precisão e
- * valor numérico destacado abaixo. Três tamanhos (sm/md/lg).
+ * Knob premium dos Controles ao Vivo (v0.2.27) — visual de sampler
+ * profissional (foto de referência): anel de progresso azul/ciano em
+ * conic-gradient, corpo circular metálico escuro com profundidade,
+ * ponteiro central luminoso e valor numérico abaixo. Três tamanhos
+ * (sm/md/lg) — parâmetros principais usam md/lg, nunca sm.
  *
  * Interação:
  *  - arrastar pra cima/baixo (150px = faixa completa; Shift = fino);
@@ -11,7 +12,7 @@
  *  - setas do teclado (com foco) ajustam de um passo;
  *  - clicar no valor abre um campo pra digitar o número.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 
 export type KnobSize = 'sm' | 'md' | 'lg';
 
@@ -29,26 +30,7 @@ interface KnobProps {
   unit?: string;
 }
 
-const CX = 32;
-const CY = 32;
-const R_ARC = 26;
-const R_KNOB = 19;
-const MIN_ANGLE = -135;
-const MAX_ANGLE = 135;
-
-const SIZES: Record<KnobSize, number> = { sm: 44, md: 64, lg: 80 };
-
-function polar(r: number, angleDeg: number) {
-  const rad = (angleDeg * Math.PI) / 180;
-  return { x: CX + r * Math.sin(rad), y: CY - r * Math.cos(rad) };
-}
-
-function arcPath(r: number, startDeg: number, endDeg: number) {
-  const s = polar(r, startDeg);
-  const e = polar(r, endDeg);
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${s.x.toFixed(2)} ${s.y.toFixed(2)} A ${r} ${r} 0 ${large} 1 ${e.x.toFixed(2)} ${e.y.toFixed(2)}`;
-}
+const SIZES: Record<KnobSize, number> = { sm: 46, md: 64, lg: 78 };
 
 export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit }: KnobProps) {
   const dragRef = useRef<{ startY: number; startValue: number } | null>(null);
@@ -77,9 +59,8 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
   }, [clamp, disabled, step]);
 
   const range = max - min;
-  const norm = range > 0 ? (value - min) / range : 0;
-  const angle = MIN_ANGLE + norm * (MAX_ANGLE - MIN_ANGLE);
-  const pointer = polar(R_KNOB - 5, angle);
+  const percentage = range > 0 ? Math.min(1, Math.max(0, (value - min) / range)) : 0;
+  const angle = -135 + percentage * 270;
   const shown = format ? format(value) : String(value);
   const px = SIZES[size];
 
@@ -121,11 +102,19 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
     setEditing(false);
   }
 
+  const knobStyle = {
+    width: px,
+    height: px,
+    '--knob-progress': `${percentage * 100}%`,
+    '--knob-angle': `${angle}deg`,
+  } as CSSProperties;
+
   return (
-    <div className={`knob knob-${size}${disabled ? ' disabled' : ''}`} ref={rootRef}>
-      <span className="knob-label">{label}</span>
+    <div className={`mrq-knob-control knob-${size}${disabled ? ' disabled' : ''}`} ref={rootRef}>
+      <span className="mrq-knob-label">{label}</span>
       <div
-        className="knob-dial"
+        className="mrq-knob"
+        style={knobStyle}
         role="slider"
         aria-label={label}
         aria-valuemin={min}
@@ -140,31 +129,13 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
         onDoubleClick={() => !disabled && onChange(defaultValue)}
         onKeyDown={onKeyDown}
       >
-        <svg viewBox="0 0 64 64" width={px} height={px} aria-hidden="true">
-          <defs>
-            <radialGradient id={`knob-body-${size}`} cx="0.38" cy="0.3" r="0.9">
-              <stop offset="0%" stopColor="#454f5e" />
-              <stop offset="55%" stopColor="#232a34" />
-              <stop offset="100%" stopColor="#10141a" />
-            </radialGradient>
-            <filter id={`knob-glow-${size}`} x="-40%" y="-40%" width="180%" height="180%">
-              <feGaussianBlur stdDeviation="1.6" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          <path d={arcPath(R_ARC, MIN_ANGLE, MAX_ANGLE)} fill="none" stroke="#262e3a" strokeWidth="3.5" strokeLinecap="round" />
-          <path d={arcPath(R_ARC, MIN_ANGLE, angle)} fill="none" stroke="#54c9ef" strokeWidth="3.5" strokeLinecap="round" filter={`url(#knob-glow-${size})`} />
-          <circle cx={CX} cy={CY} r={R_KNOB} fill={`url(#knob-body-${size})`} stroke="#4a5566" strokeWidth="1" />
-          <line x1={CX} y1={CY} x2={pointer.x} y2={pointer.y} stroke="#eaf6ff" strokeWidth="2.5" strokeLinecap="round" />
-          <circle cx={pointer.x} cy={pointer.y} r="2.2" fill="#54c9ef" />
-        </svg>
+        <div className="mrq-knob-face">
+          <span className="mrq-knob-pointer" />
+        </div>
       </div>
       {editing ? (
         <input
-          className="knob-edit"
+          className="mrq-knob-value mrq-knob-edit"
           autoFocus
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -178,7 +149,7 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
       ) : (
         <button
           type="button"
-          className="knob-value"
+          className="mrq-knob-value"
           disabled={disabled}
           title="Clique pra digitar o valor"
           onClick={() => {

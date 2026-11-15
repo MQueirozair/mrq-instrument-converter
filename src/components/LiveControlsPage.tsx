@@ -18,8 +18,9 @@
  * instrumento depois traz o mesmo ajuste de volta.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { ArrowLeft, CheckCircle2, Clock3, FolderOpen, Loader2, Piano, Power, Redo2, RotateCcw, Undo2, Usb, Waves } from 'lucide-react';
+import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
+import { writeTextFile } from '@tauri-apps/plugin-fs';
+import { ArrowLeft, CheckCircle2, Clock3, Download, FolderOpen, GitCompareArrows, Loader2, Piano, Power, Redo2, RotateCcw, Save, Undo2, Usb, Waves } from 'lucide-react';
 import { LiveInstrumentEngine } from '../audio/rack/LiveInstrumentEngine';
 import { ParamHistory } from '../audio/rack/paramHistory';
 import {
@@ -122,6 +123,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   // v0.2.26: estado dos botões Desfazer/Refazer (atualizado a cada operação).
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  // v0.2.27: Comparar (A/B) — quando ativo, todos os efeitos em bypass.
+  const [compare, setCompare] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const engineRef = useRef<LiveInstrumentEngine | null>(null);
@@ -355,7 +358,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       resumeAudio();
       setBypass((prev) => {
         const next = { ...prev, [id]: !prev[id] };
-        engineRef.current?.setBypass(next);
+        // v0.2.27: respeita o modo Comparar (A/B) — se ativo, tudo bypassado.
+        if (!compareRef.current) engineRef.current?.setBypass(next);
         const p = pathRef.current;
         if (p) saveLiveBypass(p, next);
         return next;
@@ -363,6 +367,82 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     },
     [resumeAudio]
   );
+
+  // v0.2.27: Comparar (A/B) — alterna entre o som atual e o original seco.
+  const compareRef = useRef(compare);
+  compareRef.current = compare;
+  const toggleCompare = useCallback(() => {
+    resumeAudio();
+    setCompare((prev) => {
+      const next = !prev;
+      if (next) {
+        const all = defaultLiveBypass();
+        for (const fx of LIVE_EFFECTS) all[fx.id] = true;
+        engineRef.current?.setBypass(all);
+      } else {
+        engineRef.current?.setBypass(bypassRef.current);
+      }
+      return next;
+    });
+  }, [resumeAudio]);
+
+  /** JSON das configurações atuais (pra Salvar como / Exportar). */
+  const settingsJson = useCallback(
+    () =>
+      JSON.stringify(
+        {
+          app: 'MRQ Instrument Converter',
+          version: '0.2.27',
+          instrument: pathRef.current,
+          params: paramsRef.current,
+          bypass: bypassRef.current,
+        },
+        null,
+        2
+      ),
+    []
+  );
+
+  /** Salvar: grava as configurações atuais na hora (além do autosave). */
+  const saveSettings = useCallback(() => {
+    const p = pathRef.current;
+    if (!p) return;
+    saveLiveParams(p, paramsRef.current);
+    saveLiveBypass(p, bypassRef.current);
+    pushToast('Configurações salvas.');
+  }, [pushToast]);
+
+  /** Salvar como: escolhe o arquivo e grava as configurações (.json). */
+  const saveSettingsAs = useCallback(async () => {
+    try {
+      const picked = await saveDialog({
+        title: 'Salvar configurações (.json)',
+        defaultPath: 'mrq-live-settings.json',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      });
+      if (!picked) return;
+      await writeTextFile(picked, settingsJson());
+      pushToast('Configurações salvas.');
+    } catch {
+      pushToast('Não foi possível salvar o arquivo.', 'error');
+    }
+  }, [pushToast, settingsJson]);
+
+  /** Exportar: baixa as configurações (.json) direto. */
+  const exportSettings = useCallback(() => {
+    try {
+      const blob = new Blob([settingsJson()], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mrq-live-settings.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      pushToast('Configurações exportadas.');
+    } catch {
+      pushToast('Não foi possível exportar.', 'error');
+    }
+  }, [pushToast, settingsJson]);
 
   const resetParams = useCallback(() => {
     const next = { ...defaultLiveParams(), rootKey: referenceRoot };
@@ -514,7 +594,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const loaded = path !== null && !loading && !error;
 
   /** Knob genérico da linha principal (com bypass desabilitando). */
-  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md') {
+  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'lg') {
     const def = LIVE_PARAM_DEFS[key];
     const fxId = effectIdForParam(key);
     return (
@@ -664,6 +744,24 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 title="Refazer (Ctrl+Y / Cmd+Shift+Z)"
               >
                 <Redo2 size={14} /> Refazer
+              </button>
+              <button type="button" className="btn ghost small" onClick={saveSettings} title="Salvar as configurações deste instrumento">
+                <Save size={14} /> Salvar
+              </button>
+              <button type="button" className="btn ghost small" onClick={() => void saveSettingsAs()} title="Salvar as configurações em um arquivo (.json)">
+                <Save size={14} /> Salvar como
+              </button>
+              <button
+                type="button"
+                className={`btn ghost small${compare ? ' active' : ''}`}
+                onClick={toggleCompare}
+                aria-pressed={compare}
+                title="Comparar: alterna entre o som atual e o original (sem efeitos)"
+              >
+                <GitCompareArrows size={14} /> Comparar
+              </button>
+              <button type="button" className="btn ghost small" onClick={exportSettings} title="Exportar as configurações (.json)">
+                <Download size={14} /> Exportar
               </button>
               <button type="button" className="btn ghost small" onClick={resetParams} title="Restaurar todos os controles aos padrões">
                 <RotateCcw size={14} /> Padrões

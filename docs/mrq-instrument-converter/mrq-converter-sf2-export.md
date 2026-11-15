@@ -394,3 +394,44 @@ dado de instrumento/sample tocado (só parâmetros em memória + localStorage).
   volume e pan, agrupamento de gesto, macro multi-parâmetro, invalidação de
   redo, mudança líquida zero, clear, panMode padrão/clamp/persistência).
   Bateria completa do projeto passando; build e lint OK.
+
+## 19. v0.2.27 — Clone visual 1:1 da página de Controles ao Vivo (foto de referência)
+
+Rebuild visual da página `LiveControlsPage` seguindo a foto de referência
+(imagem 1) — **nenhum parâmetro, efeito ou integração de áudio foi alterado**;
+só o front-end (layout, CSS e os botões Salvar/Salvar como/Comparar/Exportar).
+
+- **Design system MRQ** (`theme.css`): variáveis centrais `--mrq-bg:#080b11`,
+  `--mrq-panel:#101722`, `--mrq-panel-alt:#151e2a`, `--mrq-border:#273447`,
+  `--mrq-cyan:#42d9ff`, `--mrq-blue:#238bff`, `--mrq-purple:#8665ff`,
+  `--mrq-text:#f0f5ff`, `--mrq-muted:#8291a8`, `--mrq-radius:12px`,
+  `--mrq-gap:16px`. Todos os painéis da página usam o mesmo sistema.
+- **Knob premium** (`Knob.tsx`): anel de progresso `conic-gradient` (arco de
+  270°, de −135° a +135°), corpo circular metálico escuro com profundidade,
+  ponteiro central com glow cyan, valor numérico + unidade abaixo, tooltip,
+  arraste vertical, roda do mouse, duplo-clique (padrão), digitação direta,
+  navegação por teclado. Tamanhos Small (46px) / Medium (64px) / Large (78px);
+  knobs principais em Large.
+- **Layout** (CSS Grid + Flexbox, sem posicionamento absoluto pra elementos
+  importantes): barra superior (nome do instrumento, preset, indicador de
+  carregado, Desfazer/Refazer, Salvar, Salvar como, Comparar, Exportar,
+  Padrões, Abrir .mrq, Conectar MIDI); barra lateral (instrumentos
+  convertidos, abrir instrumento, informações, raiz de referência, presets,
+  integridade, estado do arquivo); painel principal 1 (nota min/max, tecla
+  raiz, velocidade min/max); painel principal 2 (volume, pan, BALANCE |
+  STEREO PAN, afinação, ataque, release, EQ graves/médios/agudos, drive,
+  sustain, curva de velocidade); painel de efeitos (Efeitos/Ao Vivo,
+  Ferramentas, Novidades) com módulos consistentes (knob principal + slider
+  vertical + knobs extras + botão de energia/bypass); teclado MIDI virtual
+  completo (largura total, oitavas, notas pressionadas, velocidade, USB MIDI,
+  mouse, responsivo); barra de status fixa (dispositivo MIDI, driver de
+  áudio, latência, estado do engine, atividade MIDI, estado do áudio).
+- **Botões novos no cabeçalho:** Salvar (grava as configurações na hora),
+  Salvar como (arquivo `.json` via diálogo nativo), Comparar (A/B — alterna
+  entre o som atual e o original seco, com todos os efeitos em bypass) e
+  Exportar (baixa as configurações `.json` direto). Todos usam o estado real
+  dos parâmetros e do bypass — nenhum controle decorativo.
+- **Validação visual:** página real renderizada no navegador (Playwright +
+  mock mínimo do runtime Tauri) e comparada com a foto de referência —
+  proporções, espaçamentos, tamanhos, alinhamentos e cores ajustados até
+  fidelidade máxima. Testes automatizados (46/46) e build/lint passando.
