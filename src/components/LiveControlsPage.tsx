@@ -71,6 +71,28 @@ const COMPUTER_KEY_TO_SEMITONE: Record<string, number> = {
   a: 0, w: 1, s: 2, e: 3, d: 4, f: 5, t: 6, g: 7, y: 8, h: 9, u: 10, j: 11, k: 12, o: 13, l: 14, p: 15, ';': 16,
 };
 
+// v0.2.29: thumbnail/hero do instrumento pela palavra-chave do nome
+// (piano, strings, brass, organ, synth, guitar) — só visual, sem efeito no áudio.
+function thumbFor(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('string') || n.includes('violin') || n.includes('corda')) return '/assets/thumb-strings.jpg';
+  if (n.includes('brass') || n.includes('tromp') || n.includes('trumpet') || n.includes('metal')) return '/assets/thumb-brass.jpg';
+  if (n.includes('organ') || n.includes('órgão') || n.includes('orgao')) return '/assets/thumb-organ.jpg';
+  if (n.includes('synth') || n.includes('pad') || n.includes('teclado')) return '/assets/thumb-synth.jpg';
+  if (n.includes('guitar') || n.includes('violão') || n.includes('viola')) return '/assets/thumb-guitar.jpg';
+  return '/assets/thumb-piano.jpg';
+}
+
+function heroFor(name: string): string {
+  const n = name.toLowerCase();
+  if (n.includes('string') || n.includes('violin') || n.includes('corda')) return '/assets/thumb-strings.jpg';
+  if (n.includes('brass') || n.includes('tromp') || n.includes('trumpet') || n.includes('metal')) return '/assets/thumb-brass.jpg';
+  if (n.includes('organ') || n.includes('órgão') || n.includes('orgao')) return '/assets/thumb-organ.jpg';
+  if (n.includes('synth') || n.includes('pad') || n.includes('teclado')) return '/assets/thumb-synth.jpg';
+  if (n.includes('guitar') || n.includes('violão') || n.includes('viola')) return '/assets/thumb-guitar.jpg';
+  return '/assets/grand-piano-hero.jpg';
+}
+
 /** Configuração dos módulos de efeito (knob principal + slider + extras). */
 const FX_MODULES: Record<string, EffectModuleConfig[]> = {
   efeitos: [
@@ -125,6 +147,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const [canRedo, setCanRedo] = useState(false);
   // v0.2.27: Comparar (A/B) — quando ativo, todos os efeitos em bypass.
   const [compare, setCompare] = useState(false);
+  // v0.2.29: busca da lista de instrumentos + velocity da última nota tocada.
+  const [search, setSearch] = useState('');
+  const [lastVelocity, setLastVelocity] = useState(0);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const engineRef = useRef<LiveInstrumentEngine | null>(null);
@@ -204,9 +229,18 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       peak = Math.max(rms, peak * 0.92);
       const el = meterRef.current;
       if (el) {
+        // v0.2.29: medidor segmentado (18 segmentos) — verde → amarelo → vermelho.
         const pct = Math.min(100, peak * 140);
-        el.style.width = `${pct}%`;
-        el.style.background = pct > 88 ? '#ff5a4e' : pct > 70 ? '#e8d34a' : '#54c9ef';
+        const lit = Math.round((pct / 100) * 18);
+        const segs = el.children;
+        for (let i = 0; i < segs.length; i++) {
+          const seg = segs[i] as HTMLElement;
+          if (i < lit) {
+            seg.className = `seg on ${i >= 15 ? 'r' : i >= 12 ? 'y' : 'g'}`;
+          } else {
+            seg.className = 'seg';
+          }
+        }
       }
       meterRafRef.current = requestAnimationFrame(tick);
     };
@@ -465,7 +499,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const noteOn = useCallback(
     (note: number, velocity?: number) => {
       resumeAudio();
-      engineRef.current?.noteOn(note, velocity ?? paramsRef.current.defaultVelocity);
+      const vel = velocity ?? paramsRef.current.defaultVelocity;
+      engineRef.current?.noteOn(note, vel);
+      setLastVelocity(vel);
       setActiveNotes((prev) => {
         const next = new Set(prev);
         next.add(note);
@@ -594,7 +630,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const loaded = path !== null && !loading && !error;
 
   /** Knob genérico da linha principal (com bypass desabilitando). */
-  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'lg') {
+  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md') {
     const def = LIVE_PARAM_DEFS[key];
     const fxId = effectIdForParam(key);
     return (
@@ -662,25 +698,44 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <div className="live-side-head">
             <span>Instrumentos Convertidos</span>
           </div>
+          <div className="live-side-search">
+            <input
+              type="text"
+              placeholder="Pesquisar..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              aria-label="Pesquisar instrumentos"
+            />
+          </div>
           <div className="live-side-list">
             {recent.length === 0 && <p className="live-side-empty">Nenhum instrumento convertido ainda.</p>}
-            {recent.map((entry) => (
-              <button
-                key={entry.path}
-                type="button"
-                className={`live-side-item${entry.path === path ? ' active' : ''}`}
-                onClick={() => void loadInstrument(entry.path)}
-                title={entry.path}
-              >
-                <Piano size={15} />
-                <span className="live-side-name">{entry.name}</span>
-                <span className="live-side-dot" />
-              </button>
-            ))}
+            {recent
+              .filter((entry) => entry.name.toLowerCase().includes(search.toLowerCase()))
+              .map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className={`live-side-item${entry.path === path ? ' active' : ''}`}
+                  onClick={() => void loadInstrument(entry.path)}
+                  title={entry.path}
+                >
+                  <img className="live-side-thumb" src={thumbFor(entry.name)} alt="" />
+                  <span className="live-side-text">
+                    <span className="live-side-name">{entry.name}</span>
+                    <span className="live-side-sub">{entry.path.split(/[\\/]/).pop() ?? ''}</span>
+                  </span>
+                  <span className="live-side-dot" />
+                </button>
+              ))}
           </div>
-          <button type="button" className="btn ghost small live-side-open" onClick={() => void openFilePicker()}>
-            <FolderOpen size={14} /> Abrir .mrq…
-          </button>
+          <div className="live-side-btns">
+            <button type="button" className="btn ghost small" onClick={() => setRecent(loadConvertedInstruments())} title="Recarregar a lista de instrumentos convertidos">
+              <RotateCcw size={13} /> Atualizar Lista
+            </button>
+            <button type="button" className="btn ghost small" onClick={() => void openFilePicker()}>
+              <FolderOpen size={13} /> Abrir Pasta
+            </button>
+          </div>
           <div className="live-side-info">
             <span className="live-side-info-title">Informações</span>
             <dl>
@@ -694,19 +749,22 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
 
         {/* ---------- Conteúdo principal ---------- */}
         <div className="live-main">
-          {/* Cabeçalho */}
+          {/* Cabeçalho: banner do instrumento + status + ações */}
           <div className="live-header">
-            <button type="button" className="btn ghost small" onClick={onClose} title="Voltar">
+            <button type="button" className="btn ghost small live-back" onClick={onClose} title="Voltar">
               <ArrowLeft size={14} /> Voltar
             </button>
-            <div className="live-title">
-              <strong>Controles ao Vivo</strong>
-              <span>{loaded ? `${instrumentName} — ${path}` : 'Nenhum instrumento aberto'}</span>
+            <div className="live-banner">
+              <img className="live-hero" src={heroFor(instrumentName)} alt="" />
+              <div className="live-banner-text">
+                <strong>{instrumentName || 'Controles ao Vivo'}</strong>
+                <span>{loaded ? 'Instrumento Convertido' : 'Nenhum instrumento aberto'}</span>
+              </div>
             </div>
             <div className="live-status">
-              <span className="live-status-item ok"><CheckCircle2 size={13} /> Pronto para tocar</span>
-              <span className="live-status-item"><Waves size={13} /> Polifonia 128 vozes</span>
-              <span className="live-status-item"><Clock3 size={13} /> Latência {latencyMs ? `${latencyMs} ms` : '—'}</span>
+              <span className="live-status-item ok"><CheckCircle2 size={16} /> <span><b>Pronto</b> para tocar</span></span>
+              <span className="live-status-item"><Waves size={16} /> <span><b>Polifonia</b> 128 vozes</span></span>
+              <span className="live-status-item"><Clock3 size={16} /> <span><b>Latência</b> {latencyMs ? `${latencyMs} ms` : '—'}</span></span>
             </div>
             <div className="live-actions">
               {presets.length > 1 && (
@@ -823,8 +881,10 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 })}
                 <div className="live-midi-field live-meter-field">
                   <span>NÍVEL DE SAÍDA</span>
-                  <div className="live-meter">
-                    <div className="live-meter-fill" ref={meterRef} />
+                  <div className="live-meter-seg" ref={meterRef}>
+                    {Array.from({ length: 18 }, (_, i) => (
+                      <span key={i} className="seg" />
+                    ))}
                   </div>
                 </div>
                 <div className="live-midi-field live-master-field">
@@ -929,13 +989,30 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
 
               {/* ---------- Teclado ---------- */}
               <div className="live-keyboard">
-                <PlayableKeyboard
-                  lowestNote={kbRange.lowest}
-                  highestNote={kbRange.highest}
-                  activeNotes={activeNotes}
-                  onNoteOn={(note) => noteOn(note)}
-                  onNoteOff={(note) => noteOff(note)}
-                />
+                <div className="live-kb-row">
+                  <div className="live-kb-octave">
+                    <span className="live-kb-label">Oitava</span>
+                    <div className="live-kb-octave-ctrl">
+                      <button type="button" onClick={() => updateParam('octave', params.octave - 1)} title="Oitava abaixo">‹</button>
+                      <b>{params.octave > 0 ? `+${params.octave}` : params.octave}</b>
+                      <button type="button" onClick={() => updateParam('octave', params.octave + 1)} title="Oitava acima">›</button>
+                    </div>
+                  </div>
+                  <div className="live-kb-keys">
+                    <PlayableKeyboard
+                      lowestNote={kbRange.lowest}
+                      highestNote={kbRange.highest}
+                      activeNotes={activeNotes}
+                      onNoteOn={(note) => noteOn(note)}
+                      onNoteOff={(note) => noteOff(note)}
+                    />
+                  </div>
+                  <div className="live-kb-velocity">
+                    <span className="live-kb-label">Velocity</span>
+                    <div className="live-kb-vel-bar"><span style={{ width: `${(lastVelocity / 127) * 100}%` }} /></div>
+                    <b>{lastVelocity || '—'}</b>
+                  </div>
+                </div>
                 <p className="live-hint">
                   Toque no teclado da tela, use as teclas do computador (a tecla <b>A</b> toca a tecla raiz) ou
                   conecte o teclado USB MIDI. Os ajustes ficam salvos automaticamente pra este instrumento.

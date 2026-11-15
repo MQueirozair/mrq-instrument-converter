@@ -435,3 +435,31 @@ só o front-end (layout, CSS e os botões Salvar/Salvar como/Comparar/Exportar).
   mock mínimo do runtime Tauri) e comparada com a foto de referência —
   proporções, espaçamentos, tamanhos, alinhamentos e cores ajustados até
   fidelidade máxima. Testes automatizados (46/46) e build/lint passando.
+
+## 20. v0.2.29 — Rebuild responsivo premium da página de Controles ao Vivo
+
+A v0.2.27/28 quebrou em janelas menores (cabeçalho sobreposto, knobs
+cortados). Esta versão reconstrói o layout pra funcionar em qualquer
+tamanho (1280×720 até 1920×1080) com o visual premium da foto de
+referência — **nenhum parâmetro ou integração de áudio foi alterado**.
+
+- **Cabeçalho sem sobreposição:** banner do instrumento (imagem hero +
+  nome + "Instrumento Convertido") + status (Pronto para tocar, Polifonia,
+  Latência) + ações com `flex-wrap` — em telas estreitas as ações vão pra
+  linha de baixo em vez de sobrepor o título.
+- **Knobs em 1 linha em 1280px:** knobs `md` (64px), rótulos em 9px,
+  seletor BALANCE|STEREO PAN compacto, curva de velocidade estreita e
+  sidebar de 188px — os 10 knobs + curva cabem numa linha só (medido via
+  Playwright: 977px de conteúdo em 1052px de painel).
+- **Visual premium:** brilho azul/roxo (`--mrq-glow`) em todos os painéis,
+  knobs com anel cyan brilhante, medidor de saída **segmentado** (18
+  segmentos verde→amarelo→vermelho), banner com foto do instrumento.
+- **Sidebar com thumbnails:** foto por tipo de instrumento (piano, strings,
+  brass, organ, synth, guitar — detectado pela palavra-chave do nome) +
+  busca funcional que filtra a lista + botões Atualizar Lista/Abrir Pasta.
+- **Teclado com controles:** oitava (parâmetro real `octave`) e display de
+  velocity da última nota tocada (dado real do `noteOn`).
+- **Imagens:** `public/assets/` com hero do piano + 6 thumbnails gerados.
+- **Validação:** screenshots reais (Playwright) em 1280×720, 1366×768,
+  1600×900 e 1920×1080 — layout íntegro em todos. 46/46 testes, build e
+  lint passando.
