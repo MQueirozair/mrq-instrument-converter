@@ -338,3 +338,17 @@ pub struct MrqDecodedSample {
     pub channels: u16,
     pub bits_per_sample_encoded: u16,
 }
+
+/// Corte (trim) de uma amostra, aplicado por `writer::rebuild_with_model`
+/// (v0.2.21 — Gerenciador de Instrumentos / Editor de Samples): os frames
+/// `[start_frame, end_frame)` são mantidos e o resto é descartado. Amostras
+/// SEM trim na lista são copiadas byte a byte do `.mrq` de origem (sem
+/// recodificar); amostras COM trim são decodificadas, cortadas e
+/// recodificadas em FLAC na mesma profundidade original.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MrqSampleTrim {
+    pub sample_id: String,
+    pub start_frame: u64,
+    pub end_frame: u64,
+}

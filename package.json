@@ -2,7 +2,7 @@
   "name": "mrq-instrument-converter",
   "productName": "MRQ Instrument Converter",
   "private": true,
-  "version": "0.2.20",
+  "version": "0.2.21",
   "description": "MRQ Instrument Converter: conversor de formatos de instrumento (.sf2/.nki/.exs/.syx/Kontakt) para .mrq/.mrqi.",
   "author": "MRQ",
   "main": "dist-electron/electron/main.js",
@@ -34,7 +34,8 @@
     "test:auto-sampler-draft": "node scripts/test-auto-sampler-draft.mjs",
     "test:converter-output-format": "node scripts/test-converter-output-format.mjs",
     "test:mrq-source": "node scripts/test-mrq-source.mjs",
-    "test:sf2-export-large": "node scripts/test-sf2-export-large.mjs"
+    "test:sf2-export-large": "node scripts/test-sf2-export-large.mjs",
+    "test:converted-instruments": "node scripts/test-converted-instruments.mjs"
   },
   "dependencies": {
     "@audio/synth-dx7": "^0.1.0",

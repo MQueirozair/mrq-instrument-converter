@@ -9,7 +9,7 @@ use tauri::State;
 use super::errors::MrqError;
 use super::model::{
     MrqDecodedSample, MrqFileMetadata, MrqFinishResult, MrqInstrumentModel, MrqIntegrityReport,
-    MrqSampleIndexEntry, MrqSampleSourceInput,
+    MrqSampleIndexEntry, MrqSampleSourceInput, MrqSampleTrim,
 };
 use super::reader;
 use super::writer::{self, MrqBuilderState};
@@ -89,4 +89,27 @@ pub fn mrq_extract_samples(path: String, sample_ids: Vec<String>) -> Result<Vec<
 #[tauri::command]
 pub fn mrq_validate_integrity(path: String) -> Result<MrqIntegrityReport, MrqError> {
     reader::validate_integrity(&std::path::PathBuf::from(path))
+}
+
+/// Reconstrói um `.mrq` a partir de um `.mrq` existente, com o modelo de
+/// instrumento EDITADO (v0.2.21 — Gerenciador de Instrumentos / Editor de
+/// Samples). Amostras sem trim são copiadas byte a byte (sem recodificar);
+/// amostras com trim são decodificadas, cortadas e recodificadas. Salvar
+/// por cima do próprio arquivo de origem é seguro (escrita atômica com
+/// autoconferência, igual ao `finish`).
+#[tauri::command]
+pub fn mrq_rebuild_with_model(
+    state: State<'_, MrqBuilderState>,
+    source_path: String,
+    dest_path: String,
+    instrument: MrqInstrumentModel,
+    trims: Option<Vec<MrqSampleTrim>>,
+) -> Result<MrqFinishResult, MrqError> {
+    writer::rebuild_with_model(
+        &state,
+        &std::path::PathBuf::from(source_path),
+        std::path::PathBuf::from(dest_path),
+        instrument,
+        trims.as_deref().unwrap_or(&[]),
+    )
 }

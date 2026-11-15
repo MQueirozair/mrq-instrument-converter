@@ -298,6 +298,30 @@ export function mrqValidateIntegrity(path: string): Promise<MrqIntegrityReport> 
   return invoke('mrq_validate_integrity', { path });
 }
 
+/** Corte (trim) de uma amostra, aplicado por `mrqRebuildWithModel` — os
+ *  frames `[startFrame, endFrame)` são mantidos. Espelha `MrqSampleTrim`
+ *  de `src-tauri/src/mrq/model.rs`. */
+export interface MrqSampleTrim {
+  sampleId: string;
+  startFrame: number;
+  endFrame: number;
+}
+
+/** Reconstrói um `.mrq` a partir de um `.mrq` existente, com o modelo de
+ *  instrumento EDITADO (v0.2.21 — Gerenciador de Instrumentos / Editor de
+ *  Samples / Estúdio de Teste). Amostras sem trim são copiadas byte a byte
+ *  no backend (sem recodificar); amostras com trim são decodificadas,
+ *  cortadas e recodificadas. Salvar por cima do próprio arquivo de origem
+ *  é seguro (escrita atômica com autoconferência no Rust). */
+export function mrqRebuildWithModel(
+  sourcePath: string,
+  destPath: string,
+  instrument: MrqInstrumentModel,
+  trims?: MrqSampleTrim[]
+): Promise<MrqFinishResult> {
+  return invoke('mrq_rebuild_with_model', { sourcePath, destPath, instrument, trims: trims ?? [] });
+}
+
 // ---------------------------------------------------------------------------
 // Importador SF2/SF3 (Fase 3, ver src-tauri/src/importers/sf2.rs). Espelha
 // `Sf2InspectionResult`/`Sf2ConversionResult` de

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Settings, HelpCircle } from 'lucide-react';
+import { Settings, HelpCircle, LibraryBig } from 'lucide-react';
 import { useStore } from './state/useStore';
 import TitleBar from './components/TitleBar';
 import InstrumentConverter from './components/InstrumentConverter';
+import InstrumentStudio from './components/InstrumentStudio';
 import HelpPanel from './components/HelpPanel';
 import SettingsModal from './components/SettingsModal';
 
@@ -28,6 +29,11 @@ export default function App() {
   const dismissToast = useStore((s) => s.dismissToast);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // v0.2.21: 'studio' = Estúdio de Instrumentos Convertidos (gerenciador +
+  // editor de samples + teste MIDI). `studioPath` abre já um .mrq específico
+  // (vindo do painel "Instrumentos Convertidos" do Conversor).
+  const [view, setView] = useState<'converter' | 'studio'>('converter');
+  const [studioPath, setStudioPath] = useState<string | null>(null);
 
   useEffect(() => {
     init();
@@ -48,6 +54,16 @@ export default function App() {
       <div className="main-body">
         <div className="rail">
           <div className="rail-spacer" />
+          <button
+            className={`rail-btn ${view === 'studio' && !helpOpen ? 'active' : ''}`}
+            title="Instrumentos Convertidos — gerenciar, editar e testar com MIDI"
+            onClick={() => {
+              setHelpOpen(false);
+              setView((v) => (v === 'studio' ? 'converter' : 'studio'));
+            }}
+          >
+            <LibraryBig size={19} strokeWidth={2} />
+          </button>
           <button className={`rail-btn ${helpOpen ? 'active' : ''}`} title="Ajuda / Sobre o MRQ" onClick={() => setHelpOpen((v) => !v)}>
             <HelpCircle size={19} strokeWidth={2} />
           </button>
@@ -56,7 +72,24 @@ export default function App() {
           </button>
         </div>
         <div className="content-area">
-          <div className="content-main">{helpOpen ? <HelpPanel /> : <InstrumentConverter />}</div>
+          <div className="content-main">
+            {helpOpen ? (
+              <HelpPanel />
+            ) : view === 'studio' ? (
+              <InstrumentStudio
+                key={studioPath ?? 'empty'}
+                initialPath={studioPath}
+                onClose={() => setView('converter')}
+              />
+            ) : (
+              <InstrumentConverter
+                onOpenInStudio={(filePath) => {
+                  setStudioPath(filePath);
+                  setView('studio');
+                }}
+              />
+            )}
+          </div>
         </div>
       </div>
 

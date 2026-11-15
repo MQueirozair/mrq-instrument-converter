@@ -455,6 +455,32 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
         </Note>
       </section>
 
+      {/* ---------------- ESTÚDIO DE INSTRUMENTOS CONVERTIDOS ---------------- */}
+      <section className="help-section" id="estudio-convertidos">
+        <SectionHead
+          icon={Library}
+          title="Estúdio de Instrumentos Convertidos — gerenciar, editar e testar"
+          purpose="Reabrir um .mrq convertido, editar samples e zonas, salvar e tocar com o teclado USB MIDI para conferir o timbre"
+        />
+        <Figure
+          src="help-studio-fluxo.svg"
+          alt="Fluxo do Estúdio: lista de instrumentos convertidos, editor de samples com trim, salvar e teste com teclado USB MIDI"
+          caption="O ciclo completo: converter → reabrir → editar → salvar → testar com MIDI → reabrir depois. A lista de convertidos fica salva no computador."
+        />
+        <ol>
+          <li><b>Onde fica:</b> no Conversor, o painel <b>INSTRUMENTOS CONVERTIDOS</b> (coluna esquerda) mostra/oculta a lista com o botão de seta. Todo .mrq convertido nesta sessão entra automaticamente. Para abrir um .mrq que você já tem no disco, use <b>Adicionar .mrq…</b> ou o botão <b>Abrir .mrq</b> do Estúdio (ícone de biblioteca na barra lateral).</li>
+          <li><b>Abrir:</b> clique em <b>Abrir</b> ao lado do instrumento. O Estúdio carrega o .mrq com todos os samples e zonas. A lista fica salva no computador — feche o app e reabra depois que os instrumentos continuam lá.</li>
+          <li><b>Editar samples:</b> na lista à esquerda, escolha um sample e veja a forma de onda. Ajuste o <b>trim</b> (início/fim em frames) para cortar silêncio ou o final, ou use <b>Auto-trim</b> para cortar o silêncio automaticamente. Samples marcados com trim são recortados ao salvar; os demais são copiados byte a byte, sem recomprimir.</li>
+          <li><b>Editar zonas:</b> use as abas de zona para ajustar nota raiz (root), faixa de teclas, faixa de velocity, afinação, volume, pan e loop (início/fim). Loops que usam samples recortados são ajustados automaticamente.</li>
+          <li><b>Salvar:</b> <b>Salvar</b> grava no mesmo arquivo; <b>Salvar como…</b> cria uma cópia. Se houver edição não salva e você tentar fechar, o app pergunta antes — nada se perde sem confirmação.</li>
+          <li><b>Testar com teclado USB:</b> na seção <b>Estúdio de Teste MIDI</b>, clique em <b>Conectar MIDI</b> e escolha seu teclado USB na lista. Toque e ouça o timbre com a velocity real das suas teclas. Sem teclado USB, use o teclado na tela ou as teclas do computador.</li>
+          <li><b>Reabrir depois:</b> o instrumento salvo volta à lista INSTRUMENTOS CONVERTIDOS e pode ser aberto de novo a qualquer momento, inclusive em outra sessão do app.</li>
+        </ol>
+        <Note kind="info">
+          <Info size={13} /> O Estúdio reaproveita o mesmo motor de som do Conversor e do Editor de Mapeamento — o timbre que você ouve no teste é o timbre do arquivo salvo.
+        </Note>
+      </section>
+
       {/* ---------------- PROBLEMAS COMUNS ---------------- */}
       <section className="help-section" id="auto-sampler-problemas">
         <SectionHead
@@ -479,6 +505,8 @@ export default function HelpAdvancedGuide({ goTo }: { goTo: (id: string) => void
               <tr><td><b>Quero recomeçar do zero</b></td><td>Rascunho antigo continua salvo de propósito.</td><td>Use Limpar tudo / Voltar do zero e confirme. Os arquivos já exportados não são apagados.</td></tr>
               <tr><td><b>macOS: “está danificado e não pode ser aberto” ao instalar o .dmg</b></td><td>App sem assinatura de código bloqueado pelo Gatekeeper (versões até v0.2.18).</td><td>Atualize para <b>v0.2.19+</b> (assinatura ad-hoc). Na primeira abertura, clique com o botão direito no app em Aplicativos → <b>Abrir</b> → <b>Abrir</b>. Ou rode no Terminal: <code>xattr -cr "/Applications/MRQ Instrument Converter.app"</code>.</td></tr>
               <tr><td><b>Qual .dmg baixar no Mac?</b></td><td>Mac Intel e Apple Silicon (M1/M2/M3/M4) precisam de instaladores diferentes.</td><td>Desde a <b>v0.2.20</b> há dois .dmgs: <code>*_x86_64.dmg</code> para <b>Mac Intel</b> (inclui MacBook Pro com <b>macOS 10.15 Catalina</b>) e <code>*_aarch64.dmg</code> para <b>Apple Silicon</b>. Baixe o da sua máquina — o outro não abre.</td></tr>
+              <tr><td><b>Teclado USB não aparece no Estúdio</b></td><td>Web MIDI bloqueado pelo navegador/sistema ou teclado não conectado.</td><td>Conecte o teclado USB, clique em <b>Conectar MIDI</b> e aguarde a lista. No Chrome/Edge funciona direto; em outros navegadores pode ser preciso permitir o acesso. Enquanto isso, o teclado na tela funciona normalmente.</td></tr>
+              <tr><td><b>Edição sumiu ao fechar o Estúdio</b></td><td>Fechou sem salvar.</td><td>O app pergunta antes de descartar edições não salvas. Use <b>Salvar</b> ou <b>Salvar como…</b> para gravar no .mrq.</td></tr>
             </tbody>
           </table>
         </div>

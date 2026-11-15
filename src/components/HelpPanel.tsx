@@ -83,6 +83,7 @@ const TOC: { id: string; label: string }[] = [
   { id: 'formatos-saida', label: 'Escolher .mrq / .sf2 / .sf3' },
   { id: 'mapeador-velocity', label: 'Divisão de velocity' },
   { id: 'conversor-midi', label: 'Pré-escuta USB MIDI' },
+  { id: 'estudio-convertidos', label: 'Estúdio de convertidos' },
   { id: 'auto-sampler-problemas', label: 'Problemas comuns' },
   { id: 'remoto', label: 'Controle remoto' },
   { id: 'osc', label: 'OSC / MRQ Sync' },
@@ -141,6 +142,7 @@ export default function HelpPanel() {
               <button type="button" onClick={() => goTo('formatos-saida')}>Escolher .mrq / .sf2 / .sf3</button>
               <button type="button" onClick={() => goTo('mapeador-velocity')}>Divisões 10 / 48 / 81</button>
               <button type="button" onClick={() => goTo('conversor-midi')}>Pré-escuta USB MIDI</button>
+              <button type="button" onClick={() => goTo('estudio-convertidos')}>Estúdio de convertidos</button>
               <button type="button" onClick={() => goTo('auto-sampler-problemas')}>Problemas comuns</button>
             </div>
           </div>

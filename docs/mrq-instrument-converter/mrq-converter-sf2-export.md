@@ -192,3 +192,33 @@ cada byte como número JSON (`Array.from(bytes)`).
 Limitação mantida: `.sf3` ainda é PCM sem compressão Vorbis; o aviso
 antes de salvar continua. A exportação SF2/SF3 continua apenas no
 Instrument Converter.
+
+## 13. v0.2.21 — Estúdio de Instrumentos Convertidos
+
+Novo fluxo reaproveitando os componentes existentes (nada foi duplicado):
+
+- **Gerenciador** (`convertedInstruments.ts` + painel no Conversor):
+  lista persistida em `localStorage` (`mrq.convertedInstruments.v1`, máx.
+  200 entradas, dedupe por caminho). Todo `.mrq` convertido entra
+  automaticamente; botão mostra/oculta; cada item abre no Estúdio.
+- **Editor de Samples** (`InstrumentStudio.tsx`): lista de samples,
+  waveform em canvas, trim por frames (início/fim) com validação
+  (`clampTrim` rejeita seleções vazias/invertidas), auto-trim de
+  silêncio (~-40 dBFS) e edição de zonas (root, teclas, velocity,
+  afinação, volume, pan, loop).
+- **Salvar sem recomprimir** (Rust `mrq_rebuild_with_model` em
+  `writer.rs`): samples sem trim são copiados byte a byte do `.mrq`
+  original (mesmo SHA-256); samples com trim são decodificados,
+  recortados e re-codificados em FLAC na profundidade original. Loops
+  das zonas que referenciam samples recortados são deslocados e
+  limitados ao novo tamanho (desativados se ficarem inválidos).
+  Escrita atômica com validação de integridade antes da troca.
+- **Estúdio de Teste MIDI**: motor `MrqLayerVoice` existente tocando o
+  instrumento carregado; teclado USB via Web MIDI
+  (`navigator.requestMIDIAccess`) + `PlayableKeyboard` na tela.
+  O timbre ouvido no teste é o do arquivo salvo.
+- **Reabrir depois**: a lista persiste entre sessões; o Estúdio também
+  abre qualquer `.mrq` pelo diálogo de arquivo.
+- Testes: `scripts/test-converted-instruments.mjs` (8 casos) + 4 testes
+  Rust em `writer.rs` (cópia verbatim, trim com ajuste de loop, loop
+  inválido desativado, trim fora do limite falha sem tocar o destino).

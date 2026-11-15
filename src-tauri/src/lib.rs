@@ -232,6 +232,7 @@ pub fn run() {
             mrq::commands::mrq_read_sample_index,
             mrq::commands::mrq_extract_sample,
             mrq::commands::mrq_extract_samples,
+            mrq::commands::mrq_rebuild_with_model,
             mrq::commands::mrq_validate_integrity,
             importers::commands::mrq_inspect_sf2,
             importers::commands::mrq_convert_sf2_to_mrq,

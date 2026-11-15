@@ -89,6 +89,15 @@ pub fn read_sample_index(path: &std::path::Path) -> Result<Vec<MrqSampleIndexEnt
     Ok(read_file_metadata(path)?.samples)
 }
 
+/// Abre o arquivo já validado e devolve o handle + o offset absoluto onde
+/// começa o bloco de amostras (cabeçalho fixo + metadados) — usado por
+/// `writer::rebuild_with_model` (v0.2.21) pra copiar os bytes FLAC de cada
+/// amostra verbatim, sem reparsear nem revalidar nada a cada amostra.
+pub(crate) fn open_for_sample_copy(path: &std::path::Path) -> Result<(std::fs::File, u64), MrqError> {
+    let (file, header) = open_and_validate_header(path)?;
+    Ok((file, format::HEADER_FIXED_LEN + header.metadata_len))
+}
+
 /// Extrai e decodifica UMA amostra, identificada por `sample_id`. Depois de
 /// ler o índice (que cobre o arquivo inteiro, é pequeno), lê e decodifica
 /// só os bytes exatos daquela amostra — nenhuma outra amostra é tocada,

@@ -71,8 +71,8 @@
 //! conteúdo por completo, sem misturar nem deixar os dois arquivos).
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Read, Write};
-use std::path::PathBuf;
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use sha2::{Digest, Sha256};
@@ -80,7 +80,7 @@ use sha2::{Digest, Sha256};
 use super::errors::MrqError;
 use super::format;
 use super::model::{
-    MrqFinishResult, MrqInstrumentModel, MrqSampleIndexEntry, MrqSampleSourceInput,
+    MrqFinishResult, MrqInstrumentModel, MrqSampleIndexEntry, MrqSampleSourceInput, MrqSampleTrim,
 };
 use super::reader;
 
@@ -402,6 +402,189 @@ pub fn abort(state: &MrqBuilderState, session_id: &str) -> Result<(), MrqError> 
             Ok(())
         }
         None => Err(MrqError::SessionNotFound { session_id: session_id.to_string() }),
+    }
+}
+
+/// Reconstrói um `.mrq` a partir de um `.mrq` JÁ EXISTENTE, com um modelo
+/// de instrumento EDITADO (v0.2.21 — Gerenciador de Instrumentos / Editor
+/// de Samples / Estúdio de Teste).
+///
+/// Diferente de `begin` + `add_sample` (que recodificam PCM em FLAC), aqui
+/// as amostras NÃO cortadas são copiadas **byte a byte** do arquivo de
+/// origem — nenhum áudio é recodificado, então edições de mapeamento
+/// (tecla/velocity/root/tune/volume/pan/loop) são 100% sem perdas e
+/// rápidas mesmo em bibliotecas de vários GB. Amostras com `trims` são
+/// decodificadas, cortadas e recodificadas em FLAC na mesma profundidade
+/// original; os pontos de loop das zonas que as referenciam são
+/// deslocados de `-start_frame` e limitados ao novo tamanho (loop que
+/// ficaria inválido é desligado, nunca deixado pendurado).
+///
+/// A escrita é a mesma "escrita segura" do `finish`: nada toca
+/// `dest_path` até o arquivo novo passar na autoconferência completa —
+/// salvar por cima do próprio arquivo de origem (`source == dest`) é
+/// seguro pelo mesmo motivo.
+pub fn rebuild_with_model(
+    state: &MrqBuilderState,
+    source_path: &Path,
+    dest_path: PathBuf,
+    instrument: MrqInstrumentModel,
+    trims: &[MrqSampleTrim],
+) -> Result<MrqFinishResult, MrqError> {
+    let source_metadata = reader::read_file_metadata(source_path)?;
+    let (mut source_file, sample_block_start) = reader::open_for_sample_copy(source_path)?;
+
+    let trim_by_id: HashMap<&str, &MrqSampleTrim> = trims.iter().map(|t| (t.sample_id.as_str(), t)).collect();
+
+    let session_id = begin(state, dest_path, instrument)?;
+
+    // Qualquer erro no meio do caminho aborta a sessão (limpa o blob
+    // temporário) — nunca deixa meio arquivo pra trás.
+    let result = rebuild_into_session(
+        state,
+        &session_id,
+        source_path,
+        &mut source_file,
+        sample_block_start,
+        &source_metadata.samples,
+        &trim_by_id,
+    );
+    match result {
+        Ok(()) => finish(state, &session_id),
+        Err(e) => {
+            let _ = abort(state, &session_id);
+            Err(e)
+        }
+    }
+}
+
+fn rebuild_into_session(
+    state: &MrqBuilderState,
+    session_id: &str,
+    source_path: &Path,
+    source_file: &mut std::fs::File,
+    sample_block_start: u64,
+    source_samples: &[MrqSampleIndexEntry],
+    trim_by_id: &HashMap<&str, &MrqSampleTrim>,
+) -> Result<(), MrqError> {
+    // Fase A (SEM segurar o lock das sessões): decodifica/corta/recodifica
+    // só as amostras com trim — é a parte lenta (FLAC), e segurar o lock
+    // aqui bloquearia outras conversões concorrentes. Amostras intactas
+    // nem são tocadas nesta fase (cópia verbatim na fase B).
+    let mut trimmed_bytes: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut loop_adjustments: Vec<(String, u64, u64)> = Vec::new(); // (sample_id, start_frame, new_len)
+    for entry in source_samples {
+        let Some(trim) = trim_by_id.get(entry.id.as_str()) else { continue };
+        let decoded = reader::extract_sample(source_path, &entry.id)?;
+        let channels = decoded.channels as usize;
+        let frames = decoded.interleaved.len() / channels;
+        if trim.start_frame >= trim.end_frame || trim.end_frame > frames as u64 {
+            return Err(MrqError::InvalidSampleParams {
+                message: format!(
+                    "trim inválido pra amostra '{}': [{}, {}) fora do tamanho real ({} frames)",
+                    entry.id, trim.start_frame, trim.end_frame, frames
+                ),
+            });
+        }
+        let start = (trim.start_frame as usize) * channels;
+        let end = (trim.end_frame as usize) * channels;
+        let trimmed = &decoded.interleaved[start..end];
+        let pcm = float32_to_integer_pcm(trimmed, decoded.bits_per_sample_encoded)?;
+        let new_len = trim.end_frame - trim.start_frame;
+        loop_adjustments.push((entry.id.clone(), trim.start_frame, new_len));
+        trimmed_bytes.insert(
+            entry.id.clone(),
+            encode_flac(&pcm, decoded.channels, decoded.bits_per_sample_encoded, decoded.sample_rate_hz)?,
+        );
+    }
+
+    // Fase B (com o lock): ajusta os loops do modelo e grava os bytes de
+    // cada amostra no blob temporário da sessão.
+    let mut map = state.0.lock().expect("mutex de sessões .mrq envenenado");
+    let session = map
+        .get_mut(session_id)
+        .ok_or_else(|| MrqError::SessionNotFound { session_id: session_id.to_string() })?;
+
+    for (sample_id, start_frame, new_len) in &loop_adjustments {
+        adjust_loops_for_trim(&mut session.instrument, sample_id, *start_frame, *new_len);
+    }
+
+    let mut copy_buf = [0u8; 64 * 1024];
+
+    for entry in source_samples {
+        let flac_bytes: Vec<u8> = if let Some(bytes) = trimmed_bytes.get(&entry.id) {
+            bytes.clone()
+        } else {
+            // Amostra intacta: cópia verbatim em blocos (nunca carrega a
+            // amostra inteira na memória de uma vez).
+            let abs_offset = sample_block_start
+                .checked_add(entry.relative_offset)
+                .ok_or_else(|| MrqError::SizeOverflow { sample_id: entry.id.clone() })?;
+            source_file.seek(SeekFrom::Start(abs_offset))?;
+            let mut bytes = Vec::with_capacity(entry.length as usize);
+            let mut remaining = entry.length;
+            while remaining > 0 {
+                let chunk = remaining.min(copy_buf.len() as u64) as usize;
+                source_file.read_exact(&mut copy_buf[..chunk])?;
+                bytes.extend_from_slice(&copy_buf[..chunk]);
+                remaining -= chunk as u64;
+            }
+            bytes
+        };
+
+        let mut hasher = Sha256::new();
+        hasher.update(&flac_bytes);
+        let sha256 = format::to_hex(&hasher.finalize());
+
+        session.tmp_samples_file.write_all(&flac_bytes)?;
+
+        let new_entry = MrqSampleIndexEntry {
+            id: entry.id.clone(),
+            relative_offset: session.next_relative_offset,
+            length: flac_bytes.len() as u64,
+            sha256,
+            sample_rate_hz: entry.sample_rate_hz,
+            channels: entry.channels,
+            bits_per_sample_original: entry.bits_per_sample_original,
+            bits_per_sample_encoded: entry.bits_per_sample_encoded,
+            converted_from_float32: entry.converted_from_float32,
+            codec: format::SAMPLE_CODEC_FLAC.to_string(),
+        };
+        session.next_relative_offset = session
+            .next_relative_offset
+            .checked_add(new_entry.length)
+            .ok_or_else(|| MrqError::SizeOverflow { sample_id: entry.id.clone() })?;
+        session.added_sample_ids.insert(entry.id.clone());
+        session.index.push(new_entry);
+    }
+
+    Ok(())
+}
+
+/// Desloca os pontos de loop das zonas que referenciam a amostra cortada
+/// de `-start_frame` e limita ao novo tamanho — um loop que ficaria
+/// inválido (fim <= início depois do corte) é desligado em vez de ficar
+/// pendurado apontando pra fora do áudio novo.
+fn adjust_loops_for_trim(instrument: &mut MrqInstrumentModel, sample_id: &str, start_frame: u64, new_len: u64) {
+    for preset in &mut instrument.presets {
+        for group in &mut preset.groups {
+            for zone in &mut group.zones {
+                if zone.sample_id != sample_id {
+                    continue;
+                }
+                if let (Some(start), Some(end)) = (zone.loop_start, zone.loop_end) {
+                    let new_start = start.saturating_sub(start_frame);
+                    let new_end = end.saturating_sub(start_frame).min(new_len);
+                    if new_end > new_start {
+                        zone.loop_start = Some(new_start);
+                        zone.loop_end = Some(new_end);
+                    } else {
+                        zone.loop_enabled = Some(false);
+                        zone.loop_start = None;
+                        zone.loop_end = None;
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -973,5 +1156,192 @@ mod tests {
 
             std::fs::remove_dir_all(&dir).ok();
         }
+    }
+
+    /// v0.2.21 — `rebuild_with_model` sem trims: o modelo editado entra no
+    /// arquivo novo e as amostras são copiadas byte a byte (mesmos hashes,
+    /// mesmo áudio), sem recodificar nada.
+    #[test]
+    fn rebuild_with_edited_model_copies_samples_verbatim() {
+        let dir = temp_dir("rebuild_verbatim");
+        let source_path = dir.join("origem.mrq");
+        let dest_path = dir.join("editado.mrq");
+        let state = MrqBuilderState::default();
+
+        let session_id = begin(&state, source_path.clone(), minimal_instrument(&["a", "b"])).unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "a".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(4800, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "b".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(9600, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        finish(&state, &session_id).unwrap();
+
+        let source_meta = reader::read_file_metadata(&source_path).unwrap();
+        let source_hashes: Vec<String> = source_meta.samples.iter().map(|s| s.sha256.clone()).collect();
+
+        // Modelo editado: muda root/volume de uma zona, sem tocar nas amostras.
+        let mut edited = source_meta.instrument.clone();
+        edited.presets[0].groups[0].zones[0].root_note = 62;
+        edited.presets[0].groups[0].zones[0].volume_db = -6.0;
+
+        let result = rebuild_with_model(&state, &source_path, dest_path.clone(), edited, &[]).unwrap();
+        assert_eq!(result.sample_count, 2);
+
+        let dest_meta = reader::read_file_metadata(&dest_path).unwrap();
+        assert_eq!(dest_meta.instrument.presets[0].groups[0].zones[0].root_note, 62);
+        assert_eq!(dest_meta.instrument.presets[0].groups[0].zones[0].volume_db, -6.0);
+        let dest_hashes: Vec<String> = dest_meta.samples.iter().map(|s| s.sha256.clone()).collect();
+        assert_eq!(dest_hashes, source_hashes, "amostras intactas precisam ter os mesmos hashes (cópia verbatim)");
+
+        let integrity = reader::validate_integrity(&dest_path).unwrap();
+        assert!(integrity.global_ok);
+        assert!(integrity.per_sample.iter().all(|s| s.ok));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// v0.2.21 — `rebuild_with_model` com trim: a amostra cortada fica com o
+    /// novo tamanho, a intacta continua verbatim, e o loop da zona cortada
+    /// é deslocado/limitado (ou desligado se ficar inválido).
+    #[test]
+    fn rebuild_with_trim_shortens_sample_and_adjusts_loop() {
+        let dir = temp_dir("rebuild_trim");
+        let source_path = dir.join("origem.mrq");
+        let dest_path = dir.join("cortado.mrq");
+        let state = MrqBuilderState::default();
+
+        let mut instrument = minimal_instrument(&["a", "b"]);
+        instrument.presets[0].groups[0].zones[0].loop_enabled = Some(true);
+        instrument.presets[0].groups[0].zones[0].loop_start = Some(1000);
+        instrument.presets[0].groups[0].zones[0].loop_end = Some(4000);
+
+        let session_id = begin(&state, source_path.clone(), instrument).unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "a".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(4800, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "b".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(9600, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        finish(&state, &session_id).unwrap();
+
+        let source_meta = reader::read_file_metadata(&source_path).unwrap();
+        let hash_b_before = source_meta.samples.iter().find(|s| s.id == "b").unwrap().sha256.clone();
+
+        // Corta "a" de [1000, 3000): 2000 frames. O loop [1000, 4000) vira
+        // [0, 2000) — deslocado de -1000 e limitado ao novo tamanho.
+        let trims = vec![MrqSampleTrim { sample_id: "a".to_string(), start_frame: 1000, end_frame: 3000 }];
+        rebuild_with_model(&state, &source_path, dest_path.clone(), source_meta.instrument.clone(), &trims).unwrap();
+
+        let decoded_a = reader::extract_sample(&dest_path, "a").unwrap();
+        assert_eq!(decoded_a.interleaved.len(), 2000, "amostra cortada precisa ter exatamente 2000 frames");
+
+        let dest_meta = reader::read_file_metadata(&dest_path).unwrap();
+        let zone_a = &dest_meta.instrument.presets[0].groups[0].zones[0];
+        assert_eq!(zone_a.loop_start, Some(0));
+        assert_eq!(zone_a.loop_end, Some(2000));
+        assert_eq!(zone_a.loop_enabled, Some(true));
+
+        let hash_b_after = dest_meta.samples.iter().find(|s| s.id == "b").unwrap().sha256.clone();
+        assert_eq!(hash_b_before, hash_b_after, "amostra sem trim precisa continuar verbatim");
+
+        let integrity = reader::validate_integrity(&dest_path).unwrap();
+        assert!(integrity.global_ok);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// v0.2.21 — trim que invalida o loop (corte depois do fim do loop)
+    /// desliga o loop em vez de deixar referência pendurada.
+    #[test]
+    fn rebuild_with_trim_disables_loop_that_becomes_invalid() {
+        let dir = temp_dir("rebuild_trim_loop_off");
+        let source_path = dir.join("origem.mrq");
+        let dest_path = dir.join("cortado.mrq");
+        let state = MrqBuilderState::default();
+
+        let mut instrument = minimal_instrument(&["a"]);
+        instrument.presets[0].groups[0].zones[0].loop_enabled = Some(true);
+        instrument.presets[0].groups[0].zones[0].loop_start = Some(100);
+        instrument.presets[0].groups[0].zones[0].loop_end = Some(200);
+
+        let session_id = begin(&state, source_path.clone(), instrument).unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "a".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(4800, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        finish(&state, &session_id).unwrap();
+
+        let source_meta = reader::read_file_metadata(&source_path).unwrap();
+        // Corta [1000, 4800): o loop [100, 200) fica inteiro ANTES do corte.
+        let trims = vec![MrqSampleTrim { sample_id: "a".to_string(), start_frame: 1000, end_frame: 4800 }];
+        rebuild_with_model(&state, &source_path, dest_path.clone(), source_meta.instrument.clone(), &trims).unwrap();
+
+        let dest_meta = reader::read_file_metadata(&dest_path).unwrap();
+        let zone = &dest_meta.instrument.presets[0].groups[0].zones[0];
+        assert_eq!(zone.loop_enabled, Some(false));
+        assert_eq!(zone.loop_start, None);
+        assert_eq!(zone.loop_end, None);
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// v0.2.21 — trim fora dos limites reais falha com erro honesto e não
+    /// toca no destino.
+    #[test]
+    fn rebuild_with_out_of_range_trim_fails_without_touching_dest() {
+        let dir = temp_dir("rebuild_trim_invalid");
+        let source_path = dir.join("origem.mrq");
+        let dest_path = dir.join("nao-criado.mrq");
+        let state = MrqBuilderState::default();
+
+        let session_id = begin(&state, source_path.clone(), minimal_instrument(&["a"])).unwrap();
+        add_sample(
+            &state,
+            &session_id,
+            "a".to_string(),
+            MrqSampleSourceInput::IntegerPcm { bits_per_sample: 16, interleaved: sine_i32(4800, 16) },
+            48000,
+            1,
+        )
+        .unwrap();
+        finish(&state, &session_id).unwrap();
+
+        let source_meta = reader::read_file_metadata(&source_path).unwrap();
+        let trims = vec![MrqSampleTrim { sample_id: "a".to_string(), start_frame: 4000, end_frame: 9999 }];
+        let err = rebuild_with_model(&state, &source_path, dest_path.clone(), source_meta.instrument.clone(), &trims);
+        assert!(err.is_err(), "trim além do tamanho real precisa falhar");
+        assert!(!dest_path.exists(), "destino não pode ser criado quando o trim é inválido");
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

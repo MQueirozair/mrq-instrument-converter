@@ -49,13 +49,18 @@ import {
   AlertTriangle,
   AudioLines,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   FileAudio,
   FolderOpen,
   FolderSearch,
+  LibraryBig,
   Loader2,
+  Music2,
   Pause,
   Piano,
   Play,
+  Plus,
   Save,
   Settings2,
   Sparkles,
@@ -85,6 +90,13 @@ import {
   type MrqInstrumentModel,
 } from '../audio/rack/mrqFormat';
 import { buildSf2FromMrqInstrument, mrqInstrumentHasExportableZones } from '../audio/rack/mrqToSf2Export';
+import {
+  addConvertedInstrument,
+  loadConvertedInstruments,
+  removeConvertedInstrument,
+  saveConvertedInstruments,
+  type ConvertedInstrumentEntry,
+} from '../audio/rack/convertedInstruments';
 import MrqInstrumentAnalyzer, { type AnalyzerSource } from './MrqInstrumentAnalyzer';
 import MappingEditor, { type MappingEditorPlaybackSource } from './MappingEditor';
 import ConverterHome, { type ConverterHomeRecentItem } from './ConverterHome';
@@ -252,7 +264,7 @@ function logConverterError(context: string, err: unknown) {
   }
 }
 
-export default function InstrumentConverter() {
+export default function InstrumentConverter({ onOpenInStudio }: { onOpenInStudio?: (path: string) => void } = {}) {
   // Segunda camada de defesa: o item de navegação já fica escondido fora do
   // Tauri (ver IconRail.tsx), mas se este componente for alcançado de outro
   // jeito mesmo assim, mostra um aviso claro em vez de deixar os diálogos de
@@ -267,10 +279,10 @@ export default function InstrumentConverter() {
       </div>
     );
   }
-  return <InstrumentConverterInner />;
+  return <InstrumentConverterInner onOpenInStudio={onOpenInStudio} />;
 }
 
-function InstrumentConverterInner() {
+function InstrumentConverterInner({ onOpenInStudio }: { onOpenInStudio?: (path: string) => void }) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [captureDialogOpen, setCaptureDialogOpen] = useState(false);
@@ -278,6 +290,53 @@ function InstrumentConverterInner() {
   const [midiControllerDialogOpen, setMidiControllerDialogOpen] = useState(false);
   const [mappingEditorItemId, setMappingEditorItemId] = useState<string | null>(null);
   const pushToast = useStore((s) => s.pushToast);
+
+  // v0.2.21 — Gerenciador de Instrumentos Convertidos: painel expansível
+  // com os .mrq já convertidos (persistido em localStorage pra reabrir
+  // depois), com botão mostrar/ocultar, adicionar, abrir no Estúdio e remover.
+  const [convertedOpen, setConvertedOpen] = useState(true);
+  const [convertedList, setConvertedList] = useState<ConvertedInstrumentEntry[]>(() => loadConvertedInstruments());
+
+  // Todo .mrq convertido nesta sessão entra automaticamente na lista.
+  useEffect(() => {
+    const convertedPaths = queue.filter((q) => q.status === 'converted' && q.convertedPath).map((q) => q.convertedPath as string);
+    if (convertedPaths.length === 0) return;
+    setConvertedList((prev) => {
+      let next = prev;
+      for (const p of convertedPaths) next = addConvertedInstrument(next, p);
+      if (next !== prev) saveConvertedInstruments(next);
+      return next;
+    });
+  }, [queue]);
+
+  async function addConvertedFromPicker() {
+    try {
+      const result = await openDialog({
+        title: 'Adicionar instrumento convertido (.mrq)',
+        multiple: true,
+        filters: [{ name: 'Instrumento MRQ', extensions: ['mrq'] }],
+      });
+      const picked = Array.isArray(result) ? result : result ? [result] : [];
+      if (picked.length === 0) return;
+      setConvertedList((prev) => {
+        let next = prev;
+        for (const p of picked) next = addConvertedInstrument(next, p);
+        saveConvertedInstruments(next);
+        return next;
+      });
+      pushToast(`${picked.length} instrumento(s) adicionado(s) à lista.`);
+    } catch {
+      pushToast('Não foi possível abrir o seletor de arquivos.', 'error');
+    }
+  }
+
+  function removeConvertedEntry(filePath: string) {
+    setConvertedList((prev) => {
+      const next = removeConvertedInstrument(prev, filePath);
+      saveConvertedInstruments(next);
+      return next;
+    });
+  }
 
   function handleCaptureImported(result: KontaktCaptureResult) {
     const item: QueueItem = {
@@ -629,6 +688,57 @@ function InstrumentConverterInner() {
           <div className="converter-dropzone" onClick={() => void pickFiles()}>
             <Upload size={16} />
             <span>MRQ · SF2/SF3 · NPNO/NSMP · SYX · EXS · WAV/AIFF/FLAC/MP3/OGG<br />clique para escolher um ou vários arquivos</span>
+          </div>
+
+          {/* v0.2.21 — INSTRUMENTOS CONVERTIDOS: botão mostra/oculta a lista
+              de .mrq convertidos (persistida pra reabrir depois). Cada item
+              abre no Estúdio (editar samples/zonas, salvar, testar com MIDI). */}
+          <div className="converted-panel">
+            <button
+              type="button"
+              className="converted-panel-toggle"
+              aria-expanded={convertedOpen}
+              onClick={() => setConvertedOpen((v) => !v)}
+              title={convertedOpen ? 'Ocultar instrumentos convertidos' : 'Mostrar instrumentos convertidos'}
+            >
+              <LibraryBig size={14} />
+              <span>INSTRUMENTOS CONVERTIDOS</span>
+              <span className="converted-panel-count">{convertedList.length}</span>
+              {convertedOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+            {convertedOpen && (
+              <div className="converted-panel-body">
+                {convertedList.length === 0 && (
+                  <p className="mrq-tab-hint">Nenhum instrumento convertido ainda. Converta um arquivo ou adicione um .mrq abaixo.</p>
+                )}
+                {convertedList.map((entry) => (
+                  <div key={entry.path} className="converted-item">
+                    <Music2 size={13} className="converted-item-icon" />
+                    <span className="converted-item-name" title={entry.path}>{entry.name}</span>
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      disabled={!onOpenInStudio}
+                      title={onOpenInStudio ? 'Abrir no Estúdio (editar, salvar e testar com MIDI)' : 'Estúdio indisponível'}
+                      onClick={() => onOpenInStudio?.(entry.path)}
+                    >
+                      Abrir
+                    </button>
+                    <button
+                      type="button"
+                      className="icon-btn small"
+                      title="Remover da lista (o arquivo no disco não é apagado)"
+                      onClick={() => removeConvertedEntry(entry.path)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                ))}
+                <button type="button" className="converted-add" onClick={() => void addConvertedFromPicker()}>
+                  <Plus size={13} /> Adicionar .mrq…
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="converter-section-label">Do Kontakt / ao vivo</div>
