@@ -285,3 +285,32 @@ rack de instrumentos ao vivo. Reaproveita o motor existente, sem duplicar:
 - **Testes:** `test-live-controls` ampliado pra 25 casos (56 controles,
   compressor, curva de velocity, bitcrusher, arpejo, macro Pressão, Eco
   Vivo).
+
+## 16. v0.2.24 — pan corrigido de vez + som plano ao abrir + bypass dos efeitos
+
+- **Correção do pan (um lado só):** a correção Haas da v0.2.23 ainda deixava
+  o canal direito mudo com **amostra mono** — o `ChannelSplitter(2)` recebe
+  o mono só no canal 0 e silêncio no canal 1. Pesquisa (Web Audio, balance
+  node robusto): um `GainNode` com `channelCountMode: 'explicit'`,
+  `channelCount: 2` e `channelInterpretation: 'speakers'` antes do splitter
+  converte o mono em estéreo (duplica pros dois canais; estéreo passa
+  intacto). Adicionado como `stereoUpmix` entre `delayOut` e o splitter —
+  PAN e imagem estéreo agora funcionam nos dois canais com qualquer fonte.
+  Bônus: o envio do reverb passou a sair do `widthMerger` (estéreo) em vez
+  do `delayOut` (mono), então a cauda do reverb também é estéreo.
+- **Som plano/original ao abrir:** os padrões de `TREMOLO DEPTH`,
+  `VIBRATO DEPTH`, `AUTO-PAN DEPTH` e `STEREO` (largura Haas) saíram de
+  50/30/50/50 pra **0** — ao abrir a página, nenhum efeito colore o som
+  antes de qualquer toque. `pressureMacro(0)` também virou neutro de
+  verdade no desenho Haas (`stereo: 0`, não mais 50).
+- **Bypass dos efeitos:** 21 efeitos ganharam botão liga/desliga (painel
+  **BYPASS DOS EFEITOS** com chips). `LiveBypass`/`applyBypass` (função pura
+  em `liveControls.ts`) neutraliza só os efeitos desligados, preservando o
+  ajuste dos knobs — ao religar, o ajuste volta. O engine aplica o bypass
+  antes da cadeia (`setBypass` + `applyEffective`); o arpejador respeita o
+  bypass. Os knobs do efeito desligado ficam desabilitados (CSS
+  `.knob.disabled` já existia). Persistência em chave separada
+  (`mrq.liveControls.bypass.v1`), sem quebrar os saves da v0.2.22+.
+- **Testes:** `test-live-controls` ampliado pra 33 casos (padrões planos,
+  `defaultLiveBypass`/`normalizeLiveBypass`/`applyBypass`/
+  `effectIdForParam`, persistência do bypass).

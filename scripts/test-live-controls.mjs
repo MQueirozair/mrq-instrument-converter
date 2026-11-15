@@ -62,11 +62,19 @@ const {
   arpNoteOffsets,
   pressureMacro,
   ecoVivoFeedback,
+  LIVE_EFFECTS,
+  defaultLiveBypass,
+  normalizeLiveBypass,
+  applyBypass,
+  effectIdForParam,
   loadLiveParams,
   saveLiveParams,
   clearLiveParams,
   hasSavedLiveParams,
   savedLiveParamsCount,
+  loadLiveBypass,
+  saveLiveBypass,
+  clearLiveBypass,
 } = await compileToNode('src/audio/rack/liveControls.ts');
 
 let passed = 0;
@@ -127,6 +135,19 @@ test('padrões neutros: volume 0dB, pan centro, sustain 100%, efeitos zerados', 
   assert.equal(p.driveDb, 0);
   assert.equal(p.noteMin, 0);
   assert.equal(p.noteMax, 127);
+});
+
+test('v0.2.24 — som plano/original ao abrir: modulações e largura zeradas por padrão', () => {
+  const p = defaultLiveParams();
+  // Sem isso, tremolo/vibrato/auto-pan/Haas colorem o som antes de qualquer toque.
+  assert.equal(p.tremoloDepth, 0, 'tremolo não pulsa ao abrir');
+  assert.equal(p.vibratoDepth, 0, 'vibrato não desafina ao abrir');
+  assert.equal(p.autopanDepth, 0, 'auto-pan não move a imagem ao abrir');
+  assert.equal(p.stereo, 0, 'largura Haas zerada = estéreo normal ao abrir');
+  assert.equal(p.eqLowDb, 0);
+  assert.equal(p.eqMidDb, 0);
+  assert.equal(p.eqHighDb, 0);
+  assert.equal(p.attackMs, 0);
 });
 
 // --- Clamp ---
@@ -293,8 +314,8 @@ test('arpNoteOffsets: alcance 0 = [0]; 12 = [0,7,12,7]; limitado a 24', () => {
   assert.deepEqual(arpNoteOffsets(99), [0, 7, 24, 7]);
 });
 
-test('pressureMacro: 0 = neutro; 100 = drive+presença+cola+largura+reverb', () => {
-  assert.deepEqual(pressureMacro(0), { driveDb: 0, eqHighDb: 0, comp: 0, stereo: 50, reverb: 0 });
+test('pressureMacro: 0 = neutro (Haas: stereo 0); 100 = drive+presença+cola+largura+reverb', () => {
+  assert.deepEqual(pressureMacro(0), { driveDb: 0, eqHighDb: 0, comp: 0, stereo: 0, reverb: 0 });
   const full = pressureMacro(100);
   assert.equal(full.driveDb, 10);
   assert.equal(full.eqHighDb, 6);
@@ -303,7 +324,7 @@ test('pressureMacro: 0 = neutro; 100 = drive+presença+cola+largura+reverb', () 
   assert.equal(full.reverb, 35);
   const mid = pressureMacro(50);
   assert.equal(mid.driveDb, 5);
-  assert.equal(mid.stereo, 70);
+  assert.equal(mid.stereo, 45);
 });
 
 test('ecoVivoFeedback: densidade alta fecha o feedback; ecoVivo 0 = base', () => {
@@ -315,6 +336,120 @@ test('ecoVivoFeedback: densidade alta fecha o feedback; ecoVivo 0 = base', () =>
   assert.ok(Math.abs(ecoVivoFeedback(35, 100, 1) - 7) < 0.001);
   // densidade média: meio do caminho
   assert.ok(Math.abs(ecoVivoFeedback(35, 100, 0.5) - 21) < 0.001);
+});
+
+// --- Bypass dos efeitos (v0.2.24) ---
+test('defaultLiveBypass: 21 efeitos, nenhum desligado', () => {
+  const b = defaultLiveBypass();
+  assert.equal(LIVE_EFFECTS.length, 21);
+  for (const fx of LIVE_EFFECTS) assert.equal(b[fx.id], false, `${fx.id} ligado por padrão`);
+});
+
+test('normalizeLiveBypass: parcial/inválido vira padrão sem lançar', () => {
+  assert.deepEqual(normalizeLiveBypass(undefined), defaultLiveBypass());
+  assert.deepEqual(normalizeLiveBypass(null), defaultLiveBypass());
+  const b = normalizeLiveBypass({ reverb: true, delay: 'sim', bogus: true });
+  assert.equal(b.reverb, true);
+  assert.equal(b.delay, false, 'valor não-booleano é ignorado');
+  assert.equal(b.chorus, false);
+});
+
+test('applyBypass sem bypass devolve os mesmos parâmetros', () => {
+  const p = defaultLiveParams();
+  p.reverb = 60; p.delay = 40; p.tremoloDepth = 70;
+  const out = applyBypass(p, defaultLiveBypass());
+  assert.equal(out.reverb, 60);
+  assert.equal(out.delay, 40);
+  assert.equal(out.tremoloDepth, 70);
+});
+
+test('applyBypass neutraliza só os efeitos desligados e preserva o resto', () => {
+  const p = defaultLiveParams();
+  p.reverb = 60; p.delay = 40; p.chorus = 30; p.tremoloDepth = 70;
+  p.eqLowDb = 5; p.driveDb = 12; p.stereo = 80; p.arpRate = 200; p.ecoVivo = 90;
+  p.gateThreshold = -30; p.vibratoDepth = 55; p.autopanDepth = 65; p.tape = 45;
+  const bypass = { ...defaultLiveBypass(), reverb: true, tremolo: true, eq: true, arp: true, gate: true };
+  const out = applyBypass(p, bypass);
+  // desligados → neutros
+  assert.equal(out.reverb, 0);
+  assert.equal(out.tremoloDepth, 0);
+  assert.equal(out.eqLowDb, 0);
+  assert.equal(out.arpRate, 0);
+  assert.equal(out.gateThreshold, -80);
+  // ligados → preservados
+  assert.equal(out.delay, 40);
+  assert.equal(out.chorus, 30);
+  assert.equal(out.driveDb, 12);
+  assert.equal(out.stereo, 80);
+  assert.equal(out.ecoVivo, 90);
+  assert.equal(out.vibratoDepth, 55);
+  assert.equal(out.autopanDepth, 65);
+  assert.equal(out.tape, 45);
+  // não muta o original
+  assert.equal(p.reverb, 60);
+  assert.equal(p.tremoloDepth, 70);
+});
+
+test('applyBypass: todos os efeitos desligados = som limpo', () => {
+  const p = defaultLiveParams();
+  // "sujeira" em tudo
+  p.eqHighDb = 9; p.driveDb = 20; p.chorus = 80; p.delay = 70; p.stereo = 100;
+  p.reverb = 90; p.shimmerMix = 60; p.comp = 80; p.phaserMix = 70; p.flangerMix = 70;
+  p.tremoloDepth = 90; p.crushMix = 60; p.octaverMix = 50; p.gateThreshold = -20;
+  p.vibratoDepth = 80; p.autopanDepth = 90; p.exciter = 70; p.ringMix = 60;
+  p.tape = 80; p.arpRate = 300; p.ecoVivo = 100;
+  const allOff = {};
+  for (const fx of LIVE_EFFECTS) allOff[fx.id] = true;
+  const out = applyBypass(p, allOff);
+  assert.equal(out.eqHighDb, 0);
+  assert.equal(out.driveDb, 0);
+  assert.equal(out.chorus, 0);
+  assert.equal(out.delay, 0);
+  assert.equal(out.stereo, 0);
+  assert.equal(out.reverb, 0);
+  assert.equal(out.shimmerMix, 0);
+  assert.equal(out.comp, 0);
+  assert.equal(out.phaserMix, 0);
+  assert.equal(out.flangerMix, 0);
+  assert.equal(out.tremoloDepth, 0);
+  assert.equal(out.crushMix, 0);
+  assert.equal(out.octaverMix, 0);
+  assert.equal(out.gateThreshold, -80);
+  assert.equal(out.vibratoDepth, 0);
+  assert.equal(out.autopanDepth, 0);
+  assert.equal(out.exciter, 0);
+  assert.equal(out.ringMix, 0);
+  assert.equal(out.tape, 0);
+  assert.equal(out.arpRate, 0);
+  assert.equal(out.ecoVivo, 0);
+});
+
+test('effectIdForParam: cada knob de efeito aponta pro efeito certo', () => {
+  assert.equal(effectIdForParam('reverb'), 'reverb');
+  assert.equal(effectIdForParam('reverbSize'), 'reverb');
+  assert.equal(effectIdForParam('eqLowDb'), 'eq');
+  assert.equal(effectIdForParam('driveDb'), 'drive');
+  assert.equal(effectIdForParam('stereo'), 'stereo');
+  assert.equal(effectIdForParam('phaserMix'), 'phaser');
+  assert.equal(effectIdForParam('arpRate'), 'arp');
+  assert.equal(effectIdForParam('ecoVivo'), 'ecoVivo');
+  // controles que não são efeito não têm dono
+  assert.equal(effectIdForParam('volumeDb'), undefined);
+  assert.equal(effectIdForParam('pan'), undefined);
+  assert.equal(effectIdForParam('velCurve'), undefined);
+  assert.equal(effectIdForParam('pressure'), undefined);
+});
+
+test('persistência do bypass: salva, carrega e apaga por instrumento', () => {
+  const path = '/musica/piano.mrq';
+  assert.deepEqual(loadLiveBypass(path), defaultLiveBypass());
+  saveLiveBypass(path, { ...defaultLiveBypass(), delay: true, gate: true });
+  const loaded = loadLiveBypass(path);
+  assert.equal(loaded.delay, true);
+  assert.equal(loaded.gate, true);
+  assert.equal(loaded.reverb, false);
+  clearLiveBypass(path);
+  assert.deepEqual(loadLiveBypass(path), defaultLiveBypass());
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);

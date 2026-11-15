@@ -18,20 +18,28 @@ import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import { ArrowLeft, FolderOpen, Loader2, Piano, RotateCcw, Usb } from 'lucide-react';
 import { LiveInstrumentEngine } from '../audio/rack/LiveInstrumentEngine';
 import {
+  LIVE_EFFECTS,
   LIVE_KNOBS_FX,
   LIVE_KNOBS_NEW,
   LIVE_KNOBS_ROW1,
   LIVE_KNOBS_TOOLS,
   LIVE_PARAM_DEFS,
   LIVE_STEPPERS,
+  clearLiveBypass,
   clearLiveParams,
+  defaultLiveBypass,
   defaultLiveParams,
+  effectIdForParam,
   hasSavedLiveParams,
   keyboardRangeFor,
+  loadLiveBypass,
   loadLiveParams,
   noteName,
   pressureMacro,
+  saveLiveBypass,
   saveLiveParams,
+  type LiveBypass,
+  type LiveEffectId,
   type LiveParamKey,
   type LiveParams,
 } from '../audio/rack/liveControls';
@@ -62,6 +70,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const [selectedPreset, setSelectedPreset] = useState('default');
   const [referenceRoot, setReferenceRoot] = useState(60);
   const [params, setParams] = useState<LiveParams>(() => defaultLiveParams());
+  const [bypass, setBypass] = useState<LiveBypass>(() => defaultLiveBypass());
   const [activeNotes, setActiveNotes] = useState<ReadonlySet<number>>(new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [midiConnected, setMidiConnected] = useState(false);
@@ -76,6 +85,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const computerKeyNoteRef = useRef<Map<string, number>>(new Map());
   const paramsRef = useRef(params);
   paramsRef.current = params;
+  const bypassRef = useRef(bypass);
+  bypassRef.current = bypass;
   const pathRef = useRef(path);
   pathRef.current = path;
 
@@ -113,6 +124,10 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         const next = hasSavedLiveParams(filePath) ? saved : { ...saved, rootKey: result.referenceRoot };
         setParams(next);
         engine.setParams(next);
+        // Bypass salvo do instrumento (v0.2.24) — nenhum desligado se não houver.
+        const savedBypass = loadLiveBypass(filePath);
+        setBypass(savedBypass);
+        engine.setBypass(savedBypass);
         setRecent(loadConvertedInstruments());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -169,11 +184,32 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     });
   }, [resumeAudio]);
 
+  /** Liga/desliga um efeito (bypass) — o ajuste dos knobs é preservado. */
+  const toggleBypass = useCallback(
+    (id: LiveEffectId) => {
+      resumeAudio();
+      setBypass((prev) => {
+        const next = { ...prev, [id]: !prev[id] };
+        engineRef.current?.setBypass(next);
+        const p = pathRef.current;
+        if (p) saveLiveBypass(p, next);
+        return next;
+      });
+    },
+    [resumeAudio]
+  );
+
   const resetParams = useCallback(() => {
     const next = { ...defaultLiveParams(), rootKey: referenceRoot };
+    const nextBypass = defaultLiveBypass();
     setParams(next);
+    setBypass(nextBypass);
     engineRef.current?.setParams(next);
-    if (pathRef.current) clearLiveParams(pathRef.current);
+    engineRef.current?.setBypass(nextBypass);
+    if (pathRef.current) {
+      clearLiveParams(pathRef.current);
+      clearLiveBypass(pathRef.current);
+    }
     pushToast('Controles restaurados aos padrões.');
   }, [pushToast, referenceRoot]);
 
@@ -378,6 +414,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <div className="live-knobs">
             {LIVE_KNOBS_ROW1.map((key) => {
               const def = LIVE_PARAM_DEFS[key];
+              const fxId = effectIdForParam(key);
               return (
                 <Knob
                   key={key}
@@ -389,6 +426,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   defaultValue={def.default}
                   format={def.format}
                   onChange={(v) => updateParam(key, v)}
+                  disabled={fxId ? bypass[fxId] : false}
                 />
               );
             })}
@@ -404,6 +442,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <div className="live-knobs">
             {LIVE_KNOBS_FX.map((key) => {
               const def = LIVE_PARAM_DEFS[key];
+              const fxId = effectIdForParam(key);
               return (
                 <Knob
                   key={key}
@@ -415,6 +454,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   defaultValue={def.default}
                   format={def.format}
                   onChange={(v) => updateParam(key, v)}
+                  disabled={fxId ? bypass[fxId] : false}
                 />
               );
             })}
@@ -428,6 +468,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <div className="live-knobs">
             {LIVE_KNOBS_TOOLS.map((key) => {
               const def = LIVE_PARAM_DEFS[key];
+              const fxId = effectIdForParam(key);
               return (
                 <Knob
                   key={key}
@@ -439,6 +480,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   defaultValue={def.default}
                   format={def.format}
                   onChange={(v) => updateParam(key, v)}
+                  disabled={fxId ? bypass[fxId] : false}
                 />
               );
             })}
@@ -452,6 +494,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <div className="live-knobs">
             {LIVE_KNOBS_NEW.map((key) => {
               const def = LIVE_PARAM_DEFS[key];
+              const fxId = effectIdForParam(key);
               return (
                 <Knob
                   key={key}
@@ -463,7 +506,32 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   defaultValue={def.default}
                   format={def.format}
                   onChange={(v) => updateParam(key, v)}
+                  disabled={fxId ? bypass[fxId] : false}
                 />
+              );
+            })}
+          </div>
+
+          {/* ---------- Bypass dos efeitos (v0.2.24) ---------- */}
+          <div className="live-fx-head">
+            <span className="live-fx-title">BYPASS DOS EFEITOS</span>
+            <span className="live-fx-sub">clique pra tirar/ligar cada efeito — o ajuste dos knobs é guardado</span>
+          </div>
+          <div className="live-bypass">
+            {LIVE_EFFECTS.map((fx) => {
+              const off = bypass[fx.id];
+              return (
+                <button
+                  key={fx.id}
+                  type="button"
+                  className={`live-bypass-chip${off ? ' off' : ''}`}
+                  onClick={() => toggleBypass(fx.id)}
+                  aria-pressed={off}
+                  title={off ? `${fx.label} desligado (bypass) — clique pra ligar` : `${fx.label} ligado — clique pra desligar`}
+                >
+                  <span className="live-bypass-dot" />
+                  {fx.label}
+                </button>
               );
             })}
           </div>

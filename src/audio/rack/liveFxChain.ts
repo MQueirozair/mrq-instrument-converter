@@ -243,14 +243,25 @@ export class LiveFxChain {
     // --- Largura estéreo (Haas, mono-safe) ---
     // Canal esquerdo direto; canal direito = direto misturado com uma cópia
     // atrasada 9ms (decorrelação). STEREO 0% = estéreo normal, 100% = largo.
-    // Nunca silencia nenhum lado — nem com fonte mono.
+    //
+    // Correção v0.2.24 (pan de um lado só): um sample MONO chega aqui como
+    // sinal mono, e o ChannelSplitter(2) colocaria o sinal só no canal 0,
+    // deixando o canal 1 (direito) MUDO. O upmixer abaixo força a saída em
+    // estéreo (channelCountMode 'explicit' + channelInterpretation
+    // 'speakers' duplica o mono pros dois canais; estéreo passa intacto),
+    // então o splitter sempre recebe L e R de verdade.
+    const stereoUpmix = ctx.createGain();
+    stereoUpmix.channelCount = 2;
+    stereoUpmix.channelCountMode = 'explicit';
+    stereoUpmix.channelInterpretation = 'speakers';
     const widthSplitter = ctx.createChannelSplitter(2);
     const widthMerger = ctx.createChannelMerger(2);
     this.widthDelay = ctx.createDelay(0.03);
     this.widthDelay.delayTime.value = HAAS_SEC;
     this.widthRightWet = ctx.createGain();
     this.widthRightDry = ctx.createGain();
-    this.delayOut.connect(widthSplitter);
+    this.delayOut.connect(stereoUpmix);
+    stereoUpmix.connect(widthSplitter);
     widthSplitter.connect(widthMerger, 0, 0); // L direto
     widthSplitter.connect(this.widthDelay, 1); // R → atraso
     this.widthDelay.connect(this.widthRightWet);
@@ -276,7 +287,10 @@ export class LiveFxChain {
     this.masterPan.connect(this.limiter);
     this.limiter.connect(this.output);
 
-    // --- Reverb (envio paralelo a partir da saída do delay) ---
+    // --- Reverb (envio paralelo a partir da saída estéreo da largura) ---
+    // v0.2.24: o envio sai do widthMerger (estéreo) em vez do delayOut (que
+    // pode ser mono com sample mono) — a cauda do reverb fica estéreo junto
+    // com o sinal seco, em vez de mono centralizada.
     const reverbSend = ctx.createGain();
     this.reverbPredelay = ctx.createDelay(0.5);
     this.convolver = ctx.createConvolver();
@@ -284,7 +298,7 @@ export class LiveFxChain {
     this.reverbColor.type = 'highshelf';
     this.reverbColor.frequency.value = 4000;
     this.reverbWet = ctx.createGain();
-    this.delayOut.connect(reverbSend);
+    widthMerger.connect(reverbSend);
     reverbSend.connect(this.reverbPredelay);
     this.reverbPredelay.connect(this.convolver);
     this.convolver.connect(this.reverbColor);

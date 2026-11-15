@@ -116,7 +116,7 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   reverbDamp: { key: 'reverbDamp', label: 'DAMP %', min: 0, max: 100, step: 1, format: f1, default: 50 },
   reverbPredelayMs: { key: 'reverbPredelayMs', label: 'PRE-DELAY ms', min: 0, max: 500, step: 5, format: f1, default: 25 },
   reverbColor: { key: 'reverbColor', label: 'COR %', min: 0, max: 100, step: 1, format: f1, default: 80 },
-  stereo: { key: 'stereo', label: 'STEREO %', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  stereo: { key: 'stereo', label: 'STEREO %', min: 0, max: 100, step: 1, format: f1, default: 0 },
   delay: { key: 'delay', label: 'DELAY %', min: 0, max: 100, step: 1, format: f1, default: 0 },
   delayTimeMs: { key: 'delayTimeMs', label: 'TEMPO ms', min: 0, max: 2000, step: 10, format: f1, default: 350 },
   delayFeedback: { key: 'delayFeedback', label: 'FEEDBACK %', min: 0, max: 95, step: 1, format: f1, default: 35 },
@@ -133,7 +133,7 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   flangerFeedback: { key: 'flangerFeedback', label: 'FLANGER FB', min: 0, max: 90, step: 1, format: f1, default: 40 },
   flangerMix: { key: 'flangerMix', label: 'FLANGER MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
   tremoloRate: { key: 'tremoloRate', label: 'TREMOLO RATE', min: 0.5, max: 20, step: 0.1, format: f1, default: 5 },
-  tremoloDepth: { key: 'tremoloDepth', label: 'TREMOLO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  tremoloDepth: { key: 'tremoloDepth', label: 'TREMOLO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 0 },
   crushBits: { key: 'crushBits', label: 'CRUSH BITS', min: 2, max: 16, step: 1, format: (v) => String(Math.round(v)), default: 8 },
   crushRate: { key: 'crushRate', label: 'CRUSH TAXA', min: 0, max: 100, step: 1, format: f1, default: 50 },
   crushMix: { key: 'crushMix', label: 'CRUSH MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
@@ -141,9 +141,9 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   octaverMix: { key: 'octaverMix', label: 'OCTAVER', min: 0, max: 100, step: 1, format: f1, default: 0 },
   gateThreshold: { key: 'gateThreshold', label: 'GATE dB', min: -80, max: 0, step: 1, format: f1, default: -80 },
   vibratoRate: { key: 'vibratoRate', label: 'VIBRATO RATE', min: 0.5, max: 12, step: 0.1, format: f1, default: 5.5 },
-  vibratoDepth: { key: 'vibratoDepth', label: 'VIBRATO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 30 },
+  vibratoDepth: { key: 'vibratoDepth', label: 'VIBRATO DEPTH', min: 0, max: 100, step: 1, format: f1, default: 0 },
   autopanRate: { key: 'autopanRate', label: 'AUTO-PAN RATE', min: 0.05, max: 10, step: 0.05, format: f2, default: 0.5 },
-  autopanDepth: { key: 'autopanDepth', label: 'AUTO-PAN DEPTH', min: 0, max: 100, step: 1, format: f1, default: 50 },
+  autopanDepth: { key: 'autopanDepth', label: 'AUTO-PAN DEPTH', min: 0, max: 100, step: 1, format: f1, default: 0 },
   exciter: { key: 'exciter', label: 'EXCITER', min: 0, max: 100, step: 1, format: f1, default: 0 },
   ringFreq: { key: 'ringFreq', label: 'RING FREQ', min: 0.5, max: 200, step: 0.5, format: f1, default: 30 },
   ringMix: { key: 'ringMix', label: 'RING MIX', min: 0, max: 100, step: 1, format: f1, default: 0 },
@@ -234,7 +234,12 @@ export function reverbColorDb(colorPct: number): number {
   return ((Math.min(100, Math.max(0, colorPct)) - 50) / 50) * 12;
 }
 
-/** STEREO % (0..100) → largura mid/side (0 = mono, 50 = normal, 100 = larga). */
+/**
+ * STEREO % (0..100) → largura mid/side (0 = mono, 50 = normal, 100 = larga).
+ * NOTA: a cadeia atual usa alargador Haas (k = STEREO/100 direto), onde
+ * 0% = estéreo normal e 100% = largo — esta função fica como referência do
+ * mapeamento mid/side original.
+ */
 export function stereoWidth(stereoPct: number): number {
   return Math.min(100, Math.max(0, stereoPct)) / 50;
 }
@@ -368,7 +373,7 @@ export function pressureMacro(pressurePct: number): { driveDb: number; eqHighDb:
     driveDb: t * 10, // 0 → 10dB de saturação
     eqHighDb: t * 6, // presença
     comp: t * 70, // cola
-    stereo: 50 + t * 40, // abre a imagem
+    stereo: t * 90, // abre a imagem (Haas: 0 = normal, 90 = bem largo)
     reverb: t * 35, // cauda de palco
   };
 }
@@ -383,6 +388,118 @@ export function ecoVivoFeedback(baseFeedbackPct: number, ecoVivoPct: number, den
   const strength = Math.min(100, Math.max(0, ecoVivoPct)) / 100;
   const d = Math.min(1, Math.max(0, density));
   return base * (1 - strength * d * 0.8);
+}
+
+// ---------------------------------------------------------------------------
+// Bypass dos efeitos (v0.2.24) — cada efeito pode ser tirado do caminho de
+// áudio sem perder o ajuste dos knobs (ao religar, o ajuste volta).
+// ---------------------------------------------------------------------------
+
+/** Identificador de cada efeito com botão de bypass. */
+export type LiveEffectId =
+  | 'eq' | 'drive' | 'chorus' | 'delay' | 'stereo' | 'reverb' | 'shimmer'
+  | 'comp' | 'phaser' | 'flanger' | 'tremolo' | 'crush' | 'octaver' | 'gate'
+  | 'vibrato' | 'autopan' | 'exciter' | 'ring' | 'tape' | 'arp' | 'ecoVivo';
+
+/** Estado de bypass: `true` = efeito fora do caminho de áudio. */
+export type LiveBypass = Record<LiveEffectId, boolean>;
+
+export interface LiveEffectDef {
+  id: LiveEffectId;
+  label: string;
+  /** Knobs que pertencem a este efeito (ficam desabilitados no bypass). */
+  paramKeys: LiveParamKey[];
+}
+
+/** Efeitos com bypass, na ordem em que aparecem na página. */
+export const LIVE_EFFECTS: LiveEffectDef[] = [
+  { id: 'eq', label: 'EQ', paramKeys: ['eqLowDb', 'eqMidDb', 'eqHighDb'] },
+  { id: 'drive', label: 'DRIVE', paramKeys: ['driveDb'] },
+  { id: 'reverb', label: 'REVERB', paramKeys: ['reverb', 'reverbSize', 'reverbDamp', 'reverbPredelayMs', 'reverbColor'] },
+  { id: 'stereo', label: 'STEREO', paramKeys: ['stereo'] },
+  { id: 'delay', label: 'DELAY', paramKeys: ['delay', 'delayTimeMs', 'delayFeedback'] },
+  { id: 'chorus', label: 'CHORUS', paramKeys: ['chorus', 'chorusRateHz', 'chorusDepth'] },
+  { id: 'comp', label: 'COMP', paramKeys: ['comp'] },
+  { id: 'phaser', label: 'PHASER', paramKeys: ['phaserRate', 'phaserDepth', 'phaserMix'] },
+  { id: 'flanger', label: 'FLANGER', paramKeys: ['flangerRate', 'flangerDepth', 'flangerFeedback', 'flangerMix'] },
+  { id: 'tremolo', label: 'TREMOLO', paramKeys: ['tremoloRate', 'tremoloDepth'] },
+  { id: 'crush', label: 'BITCRUSHER', paramKeys: ['crushBits', 'crushRate', 'crushMix'] },
+  { id: 'shimmer', label: 'SHIMMER', paramKeys: ['shimmerMix'] },
+  { id: 'octaver', label: 'OCTAVER', paramKeys: ['octaverMix'] },
+  { id: 'gate', label: 'GATE', paramKeys: ['gateThreshold'] },
+  { id: 'vibrato', label: 'VIBRATO', paramKeys: ['vibratoRate', 'vibratoDepth'] },
+  { id: 'autopan', label: 'AUTO-PAN', paramKeys: ['autopanRate', 'autopanDepth'] },
+  { id: 'exciter', label: 'EXCITER', paramKeys: ['exciter'] },
+  { id: 'ring', label: 'RING MOD', paramKeys: ['ringFreq', 'ringMix'] },
+  { id: 'tape', label: 'TAPE', paramKeys: ['tape'] },
+  { id: 'arp', label: 'ARPEJADOR', paramKeys: ['arpRate', 'arpRange'] },
+  { id: 'ecoVivo', label: 'ECO VIVO', paramKeys: ['ecoVivo'] },
+];
+
+/** Mapa parâmetro → efeito (pra desabilitar os knobs do efeito em bypass). */
+const EFFECT_BY_PARAM: Partial<Record<LiveParamKey, LiveEffectId>> = (() => {
+  const map: Partial<Record<LiveParamKey, LiveEffectId>> = {};
+  for (const fx of LIVE_EFFECTS) {
+    for (const key of fx.paramKeys) map[key] = fx.id;
+  }
+  return map;
+})();
+
+/** Efeito dono de um parâmetro (ou `undefined` se não é de nenhum efeito). */
+export function effectIdForParam(key: LiveParamKey): LiveEffectId | undefined {
+  return EFFECT_BY_PARAM[key];
+}
+
+/** Bypass padrão: nenhum efeito desligado. */
+export function defaultLiveBypass(): LiveBypass {
+  const out = {} as LiveBypass;
+  for (const fx of LIVE_EFFECTS) out[fx.id] = false;
+  return out;
+}
+
+/** Normaliza um bypass parcial (ex.: vindo do localStorage) — nunca lança. */
+export function normalizeLiveBypass(input: Partial<LiveBypass> | undefined | null): LiveBypass {
+  const out = defaultLiveBypass();
+  if (input && typeof input === 'object') {
+    for (const fx of LIVE_EFFECTS) {
+      const value: unknown = input[fx.id];
+      if (typeof value === 'boolean') out[fx.id] = value;
+    }
+  }
+  return out;
+}
+
+/**
+ * Aplica o bypass: devolve uma CÓPIA dos parâmetros com cada efeito em
+ * bypass neutralizado (o ajuste original dos knobs é preservado — ao religar
+ * o efeito, o ajuste volta a valer). Função pura, testável.
+ */
+export function applyBypass(p: LiveParams, bypass: LiveBypass): LiveParams {
+  const anyBypassed = LIVE_EFFECTS.some((fx) => bypass[fx.id]);
+  if (!anyBypassed) return p;
+  const out = { ...p };
+  if (bypass.eq) { out.eqLowDb = 0; out.eqMidDb = 0; out.eqHighDb = 0; }
+  if (bypass.drive) out.driveDb = 0;
+  if (bypass.chorus) out.chorus = 0;
+  if (bypass.delay) out.delay = 0;
+  if (bypass.stereo) out.stereo = 0;
+  if (bypass.reverb) out.reverb = 0;
+  if (bypass.shimmer) out.shimmerMix = 0;
+  if (bypass.comp) out.comp = 0;
+  if (bypass.phaser) out.phaserMix = 0;
+  if (bypass.flanger) out.flangerMix = 0;
+  if (bypass.tremolo) out.tremoloDepth = 0;
+  if (bypass.crush) out.crushMix = 0;
+  if (bypass.octaver) out.octaverMix = 0;
+  if (bypass.gate) out.gateThreshold = -80; // mínimo = gate sempre aberto
+  if (bypass.vibrato) out.vibratoDepth = 0;
+  if (bypass.autopan) out.autopanDepth = 0;
+  if (bypass.exciter) out.exciter = 0;
+  if (bypass.ring) out.ringMix = 0;
+  if (bypass.tape) out.tape = 0;
+  if (bypass.arp) out.arpRate = 0;
+  if (bypass.ecoVivo) out.ecoVivo = 0;
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,4 +560,51 @@ export function savedLiveParamsCount(): number {
 /** Se já existem parâmetros salvos pra este instrumento. */
 export function hasSavedLiveParams(path: string): boolean {
   return path in readStore();
+}
+
+// --- Persistência do bypass (chave separada — não quebra os saves v0.2.22+) ---
+
+const BYPASS_STORAGE_KEY = 'mrq.liveControls.bypass.v1';
+
+type LiveBypassByPath = Record<string, LiveBypass>;
+
+function readBypassStore(): LiveBypassByPath {
+  try {
+    const raw = localStorage.getItem(BYPASS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as LiveBypassByPath;
+  } catch {
+    return {};
+  }
+}
+
+function writeBypassStore(store: LiveBypassByPath) {
+  try {
+    localStorage.setItem(BYPASS_STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    /* localStorage cheio/indisponível — o bypass continua em memória */
+  }
+}
+
+/** Bypass salvo pra um instrumento (padrão: nenhum efeito desligado). */
+export function loadLiveBypass(path: string): LiveBypass {
+  return normalizeLiveBypass(readBypassStore()[path]);
+}
+
+/** Salva o bypass de um instrumento (merge com o que já havia). */
+export function saveLiveBypass(path: string, bypass: LiveBypass) {
+  const store = readBypassStore();
+  store[path] = normalizeLiveBypass(bypass);
+  writeBypassStore(store);
+}
+
+/** Apaga o bypass salvo de um instrumento (volta a nenhum desligado). */
+export function clearLiveBypass(path: string) {
+  const store = readBypassStore();
+  if (path in store) {
+    delete store[path];
+    writeBypassStore(store);
+  }
 }

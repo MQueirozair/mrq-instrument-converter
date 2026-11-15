@@ -26,11 +26,14 @@ import type { RackPresetOption } from '../../../shared/types';
 import { MrqLayerVoice } from './MrqLayerVoice';
 import { LiveFxChain } from './liveFxChain';
 import {
+  applyBypass,
   applyVelocityCurve,
   arpNoteOffsets,
   clampLiveParams,
+  defaultLiveBypass,
   referenceRootFromZones,
   sustainLevel,
+  type LiveBypass,
   type LiveParams,
 } from './liveControls';
 import { mrqReadMetadata } from './mrqFormat';
@@ -56,6 +59,8 @@ export class LiveInstrumentEngine {
   private chain: LiveFxChain;
   private gate: GainNode;
   private params: LiveParams;
+  /** Bypass dos efeitos (v0.2.24) — aplicado sobre `params` antes da cadeia. */
+  private bypass: LiveBypass = defaultLiveBypass();
   /** nota original (a que a página mandou) → nota transposta + velocity. */
   private heldNotes = new Map<number, HeldNote>();
   private pendingRelease = new Map<number, ReturnType<typeof setTimeout>>();
@@ -100,10 +105,27 @@ export class LiveInstrumentEngine {
   setParams(params: LiveParams) {
     if (this.disposed) return;
     this.params = clampLiveParams(params);
-    this.chain.setParams(this.params);
+    this.applyEffective();
     this.applyTune();
-    // Se o arpejador foi desligado, para na hora.
-    if (this.params.arpRate <= 0) this.stopArp();
+  }
+
+  /** Define o bypass dos efeitos (v0.2.24) — reaplica a cadeia na hora. */
+  setBypass(bypass: LiveBypass) {
+    if (this.disposed) return;
+    this.bypass = bypass;
+    this.applyEffective();
+  }
+
+  /** Parâmetros efetivos (com o bypass aplicado) que a cadeia realmente usa. */
+  private effectiveParams(): LiveParams {
+    return applyBypass(this.params, this.bypass);
+  }
+
+  private applyEffective() {
+    const eff = this.effectiveParams();
+    this.chain.setParams(eff);
+    // Se o arpejador foi desligado (ou está em bypass), para na hora.
+    if (eff.arpRate <= 0) this.stopArp();
   }
 
   private applyTune() {
@@ -166,8 +188,9 @@ export class LiveInstrumentEngine {
   // --- Arpejador -----------------------------------------------------------
 
   private startArp() {
-    if (this.arpTimer !== null || this.params.arpRate <= 0) return;
-    const stepMs = this.params.arpRate;
+    // v0.2.24: usa a taxa efetiva (com bypass) — arpejador em bypass não toca.
+    const stepMs = this.effectiveParams().arpRate;
+    if (this.arpTimer !== null || stepMs <= 0) return;
     this.arpStep = 0;
     this.arpTimer = setInterval(() => {
       if (this.heldNotes.size === 0) {
