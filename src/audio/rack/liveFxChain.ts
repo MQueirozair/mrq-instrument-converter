@@ -278,7 +278,8 @@ export class LiveFxChain {
     // v0.2.25: pan/balance profissional (panBalance.ts) — BALANCE preserva a
     // imagem estéreo; é o único pan mestre (sem duplo processamento).
     this.masterGain = ctx.createGain();
-    this.masterPan = createPanBalanceNode(ctx, initial.pan, 'balance');
+    // v0.2.26: modo de pan (BALANCE padrão / STEREO PAN) vindo dos parâmetros.
+    this.masterPan = createPanBalanceNode(ctx, initial.pan, initial.panMode === 1 ? 'pan' : 'balance');
     this.limiter = ctx.createDynamicsCompressor();
     this.limiter.threshold.value = -1.0;
     this.limiter.knee.value = 0;
@@ -386,6 +387,8 @@ export class LiveFxChain {
 
     // Master
     t(this.masterGain.gain, dbToGain(p.volumeDb));
+    // v0.2.26: modo de pan (setMode ignora se não mudou — sem rampa redundante).
+    this.masterPan.setMode(p.panMode === 1 ? 'pan' : 'balance');
     this.masterPan.setPan(p.pan);
   }
 

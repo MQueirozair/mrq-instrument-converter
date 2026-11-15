@@ -115,6 +115,8 @@ export function createPanBalanceNode(ctx: AudioContext, initialPan = 0, initialM
       apply();
     },
     setMode: (next: PanBalanceMode) => {
+      // v0.2.26: se o modo não mudou, não reaplica (evita rampa redundante).
+      if (next === mode) return;
       mode = next;
       apply();
     },

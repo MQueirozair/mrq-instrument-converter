@@ -362,3 +362,35 @@ Redesign completo da página Controles ao Vivo seguindo a foto de referência
   pan/balance nos 5 pontos, loudness constante do equal-power, curvas
   reversíveis sem NaN, linha MIDI, 60 controles). Bateria completa do
   projeto passando; build e lint OK.
+
+## 18. v0.2.26 — Undo/Redo + seletor de modo de pan (incremental)
+
+Atualização incremental sobre a v0.2.25 — nenhum sistema reconstruído, nenhum
+dado de instrumento/sample tocado (só parâmetros em memória + localStorage).
+
+- **Undo/Redo (`paramHistory.ts`, novo):** classe pura `ParamHistory` com
+  pilhas de undo/redo e "gesto pendente". `record()` acumula as mudanças de
+  um gesto (arraste de knob = **uma** operação, com `before` do início e
+  `after` do fim); `commit()` (debounce de 700ms na página) confirma o
+  gesto; uma macro (PRESSÃO, 5 knobs) vira **uma** entrada. Atalhos
+  **Ctrl+Z/Ctrl+Y** (Windows) e **Cmd+Z/Cmd+Shift+Z** (macOS) + botões
+  Desfazer/Refazer no cabeçalho. **Histórico separado por instrumento**
+  (mapa na sessão — trocar de instrumento preserva o de cada um). A
+  restauração usa `applyParams(next, false)`, que **não registra** — sem
+  loop de callbacks; interface e DSP atualizam juntos. `Padrões` limpa o
+  histórico do instrumento.
+- **Seletor de pan (`panMode`, novo parâmetro):** **BALANCE** (0, padrão —
+  compatível com instrumentos estéreo existentes) | **STEREO PAN** (1,
+  equal-power, desloca a imagem). O `liveFxChain` chama
+  `masterPan.setMode(...)` (o `setMode` ignora modo repetido — sem rampa
+  redundante nem estalo; a troca de nível é gradual via `setTargetAtTime`).
+  Seletor segmentado ao lado do knob PAN, com L/C/R no próprio knob. O modo
+  persiste no `mrq.liveControls.v1` (saves antigos sem `panMode` caem no
+  padrão BALANCE via clamp — migração retrocompatível, sem backup
+  necessário).
+- **Proteção de dados:** nenhuma amostra, instrumento convertido, projeto ou
+  mapeamento é modificado — só parâmetros em memória/localStorage.
+- **Testes:** `test-live-controls` ampliado pra 46 casos (undo/redo de
+  volume e pan, agrupamento de gesto, macro multi-parâmetro, invalidação de
+  redo, mudança líquida zero, clear, panMode padrão/clamp/persistência).
+  Bateria completa do projeto passando; build e lint OK.

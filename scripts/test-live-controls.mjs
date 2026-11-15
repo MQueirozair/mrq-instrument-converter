@@ -88,6 +88,8 @@ const {
   panLabel,
 } = await compileToNode('src/audio/rack/panBalance.ts');
 
+const { ParamHistory } = await compileToNode('src/audio/rack/paramHistory.ts');
+
 let passed = 0;
 function test(name, fn) {
   fn();
@@ -96,9 +98,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('60 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('61 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 60);
+  assert.equal(keys.length, 61);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);
@@ -106,7 +108,7 @@ test('60 controles definidos, todos com min < max e padrão dentro da faixa', ()
   }
 });
 
-test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 60', () => {
+test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 60 (+panMode)', () => {
   assert.equal(LIVE_STEPPERS.length, 5);
   assert.equal(LIVE_KNOBS_ROW1.length, 10);
   assert.equal(LIVE_KNOBS_FX.length, 12);
@@ -115,6 +117,9 @@ test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades + 4 
   assert.equal(LIVE_MIDI_ROW.length, 4);
   const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW, ...LIVE_MIDI_ROW];
   assert.equal(new Set(all).size, 60);
+  // panMode é parâmetro (persistido) mas não é knob de nenhuma linha.
+  assert.ok('panMode' in LIVE_PARAM_DEFS);
+  assert.ok(!all.includes('panMode'));
 });
 
 test('padrões das ferramentas: tudo desligado/neutro por padrão', () => {
@@ -536,6 +541,100 @@ test('linha MIDI (v0.2.25): canal 1-16, oitava -2..2, velocity padrão, modo', (
   assert.equal(clamped.octave, -2);
   assert.equal(clamped.defaultVelocity, 1);
   assert.equal(clamped.playMode, 1);
+});
+
+// --- Undo/Redo (v0.2.26) ---
+test('ParamHistory: alterar volume e desfazer/refazer', () => {
+  const h = new ParamHistory();
+  assert.equal(h.canUndo(), false);
+  h.record('volumeDb', 0, -6);
+  assert.equal(h.canUndo(), true, 'pendente já permite desfazer');
+  assert.equal(h.commit(), true);
+  assert.equal(h.undoDepth, 1);
+  const undone = h.undo();
+  assert.deepEqual(undone.changes, [{ key: 'volumeDb', before: 0, after: -6 }]);
+  assert.equal(h.canRedo(), true);
+  const redone = h.redo();
+  assert.deepEqual(redone.changes, [{ key: 'volumeDb', before: 0, after: -6 }]);
+  assert.equal(h.canUndo(), true);
+  assert.equal(h.canRedo(), false);
+});
+
+test('ParamHistory: movimentos contínuos do knob viram UMA operação', () => {
+  const h = new ParamHistory();
+  // arraste: vários records do mesmo parâmetro antes do commit
+  h.record('pan', 0, 0.1);
+  h.record('pan', 0.1, 0.2);
+  h.record('pan', 0.2, 0.35);
+  h.record('pan', 0.35, 0.5);
+  assert.equal(h.commit(), true);
+  assert.equal(h.undoDepth, 1, 'um gesto = uma entrada');
+  const entry = h.undo();
+  assert.deepEqual(entry.changes, [{ key: 'pan', before: 0, after: 0.5 }], 'before do início, after do fim');
+});
+
+test('ParamHistory: vários parâmetros (macro) numa única entrada', () => {
+  const h = new ParamHistory();
+  h.record('pressure', 0, 80);
+  h.record('driveDb', 0, 8);
+  h.record('eqHighDb', 0, 4.8);
+  h.record('comp', 0, 56);
+  h.record('stereo', 0, 72);
+  h.record('reverb', 0, 28);
+  assert.equal(h.commit(), true);
+  assert.equal(h.undoDepth, 1);
+  const entry = h.undo();
+  assert.equal(entry.changes.length, 6, 'macro = 6 mudanças numa entrada só');
+  assert.equal(h.redoDepth, 1);
+});
+
+test('ParamHistory: nova edição invalida o redo; desfazer várias vezes', () => {
+  const h = new ParamHistory();
+  h.record('volumeDb', 0, -3); h.commit();
+  h.record('pan', 0, 0.5); h.commit();
+  h.record('reverb', 0, 40); h.commit();
+  assert.equal(h.undoDepth, 3);
+  h.undo(); // reverb
+  h.undo(); // pan
+  assert.equal(h.redoDepth, 2);
+  // nova edição limpa o redo
+  h.record('delay', 0, 25); h.commit();
+  assert.equal(h.canRedo(), false, 'nova edição invalida redo');
+  assert.equal(h.undoDepth, 2, 'volume + delay');
+  h.undo(); // delay
+  h.undo(); // volume
+  assert.equal(h.canUndo(), false);
+  assert.equal(h.undo(), null);
+});
+
+test('ParamHistory: mudança que volta ao valor original não gera entrada', () => {
+  const h = new ParamHistory();
+  h.record('volumeDb', 0, -5);
+  h.record('volumeDb', -5, 0); // voltou
+  assert.equal(h.commit(), false, 'sem mudança líquida = sem entrada');
+  assert.equal(h.canUndo(), false);
+});
+
+test('ParamHistory: clear apaga tudo; undo/redo vazios retornam null', () => {
+  const h = new ParamHistory();
+  assert.equal(h.undo(), null);
+  assert.equal(h.redo(), null);
+  h.record('pan', 0, 1); h.commit();
+  h.clear();
+  assert.equal(h.canUndo(), false);
+  assert.equal(h.canRedo(), false);
+  assert.equal(h.undoDepth, 0);
+});
+
+test('panMode (v0.2.26): padrão BALANCE (0), clamp 0..1, persiste', () => {
+  const p = defaultLiveParams();
+  assert.equal(p.panMode, 0, 'BALANCE é o padrão (compatível com estéreo)');
+  assert.equal(clampLiveParams({ panMode: 7 }).panMode, 1);
+  assert.equal(clampLiveParams({ panMode: -3 }).panMode, 0);
+  // persiste junto com os demais parâmetros
+  saveLiveParams('/musica/orgao.mrq', { ...defaultLiveParams(), panMode: 1 });
+  assert.equal(loadLiveParams('/musica/orgao.mrq').panMode, 1);
+  clearLiveParams('/musica/orgao.mrq');
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);

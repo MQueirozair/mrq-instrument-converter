@@ -81,6 +81,8 @@ export interface LiveParams {
   octave: number;
   defaultVelocity: number;
   playMode: number; // 0 = Normal (polifônico), 1 = Mono (uma voz por vez)
+  // --- Pan (v0.2.26) — 0 = BALANCE (preserva imagem), 1 = STEREO PAN ---
+  panMode: number;
 }
 
 export type LiveParamKey = keyof LiveParams;
@@ -170,6 +172,8 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   octave: { key: 'octave', label: 'OITAVA', min: -2, max: 2, step: 1, format: (v) => String(Math.round(v)), default: 0 },
   defaultVelocity: { key: 'defaultVelocity', label: 'VELOCIDADE PADRÃO', min: 1, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 100 },
   playMode: { key: 'playMode', label: 'MODO DE REPRODUÇÃO', min: 0, max: 1, step: 1, format: (v) => (Math.round(v) === 1 ? 'Mono' : 'Normal'), default: 0 },
+  // --- Pan (v0.2.26) — BALANCE é o padrão (compatível com instrumentos estéreo) ---
+  panMode: { key: 'panMode', label: 'MODO DE PAN', min: 0, max: 1, step: 1, format: (v) => (Math.round(v) === 1 ? 'Stereo Pan' : 'Balance'), default: 0 },
 };
 
 /** Ordem dos knobs da linha 1 (depois dos steppers). */

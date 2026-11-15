@@ -19,8 +19,9 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { open as openDialog } from '@tauri-apps/plugin-dialog';
-import { ArrowLeft, CheckCircle2, Clock3, FolderOpen, Loader2, Piano, Power, RotateCcw, Usb, Waves } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Clock3, FolderOpen, Loader2, Piano, Power, Redo2, RotateCcw, Undo2, Usb, Waves } from 'lucide-react';
 import { LiveInstrumentEngine } from '../audio/rack/LiveInstrumentEngine';
+import { ParamHistory } from '../audio/rack/paramHistory';
 import {
   LIVE_EFFECTS,
   LIVE_KNOBS_FX,
@@ -118,6 +119,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const [error, setError] = useState<string | null>(null);
   const [recent, setRecent] = useState(() => loadConvertedInstruments());
   const [latencyMs, setLatencyMs] = useState(0);
+  // v0.2.26: estado dos botões Desfazer/Refazer (atualizado a cada operação).
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   const ctxRef = useRef<AudioContext | null>(null);
   const engineRef = useRef<LiveInstrumentEngine | null>(null);
@@ -133,6 +137,31 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   bypassRef.current = bypass;
   const pathRef = useRef(path);
   pathRef.current = path;
+  // v0.2.26: histórico de edição por instrumento (sessão) + debounce do commit.
+  const historyByPathRef = useRef<Map<string, ParamHistory>>(new Map());
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Histórico do instrumento atual (cria se ainda não existe). */
+  const currentHistory = useCallback((): ParamHistory => {
+    const p = pathRef.current;
+    if (!p) {
+      // Sem instrumento: histórico descartável (nunca usado de verdade).
+      return new ParamHistory();
+    }
+    let h = historyByPathRef.current.get(p);
+    if (!h) {
+      h = new ParamHistory();
+      historyByPathRef.current.set(p, h);
+    }
+    return h;
+  }, []);
+
+  /** Atualiza os botões Desfazer/Refazer conforme o histórico atual. */
+  const refreshHistButtons = useCallback(() => {
+    const h = currentHistory();
+    setCanUndo(h.canUndo());
+    setCanRedo(h.canRedo());
+  }, [currentHistory]);
 
   const ensureEngine = useCallback((): LiveInstrumentEngine => {
     if (!ctxRef.current) {
@@ -202,12 +231,16 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         // do instrumento (transposição zero — toca na afinação original).
         const saved = loadLiveParams(filePath);
         const next = hasSavedLiveParams(filePath) ? saved : { ...saved, rootKey: result.referenceRoot };
+        paramsRef.current = next;
         setParams(next);
         engine.setParams(next);
         // Bypass salvo do instrumento (v0.2.24) — nenhum desligado se não houver.
         const savedBypass = loadLiveBypass(filePath);
         setBypass(savedBypass);
         engine.setBypass(savedBypass);
+        // v0.2.26: o histórico é por instrumento — trocar de instrumento
+        // preserva o de cada um (mapa na sessão); atualiza os botões.
+        refreshHistButtons();
         setRecent(loadConvertedInstruments());
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -217,7 +250,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         setLoading(false);
       }
     },
-    [ensureEngine, pushToast, resumeAudio]
+    [ensureEngine, pushToast, refreshHistButtons, resumeAudio]
   );
 
   // Abre o instrumento inicial (vindo do Conversor/Estúdio).
@@ -244,10 +277,44 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     };
   }, []);
 
-  const updateParam = useCallback((key: LiveParamKey, value: number) => {
-    resumeAudio();
-    setParams((prev) => {
-      let next = { ...prev, [key]: value };
+  /**
+   * Aplica um conjunto completo de parâmetros (fonte única): atualiza o
+   * ref + estado + DSP + salvamento. Com `recordHistory`, registra no
+   * histórico (agrupando o gesto via debounce). Sem ele (undo/redo/load),
+   * NÃO registra — assim a restauração nunca gera loop de callbacks.
+   */
+  const applyParams = useCallback(
+    (next: LiveParams, recordHistory: boolean) => {
+      const prev = paramsRef.current;
+      if (recordHistory) {
+        const h = currentHistory();
+        for (const k of Object.keys(next) as LiveParamKey[]) {
+          if (next[k] !== prev[k]) h.record(k, prev[k], next[k]);
+        }
+        // Agrupa movimentos contínuos: confirma o gesto 700ms após parar.
+        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        commitTimerRef.current = setTimeout(() => {
+          commitTimerRef.current = null;
+          currentHistory().commit();
+          refreshHistButtons();
+        }, 700);
+      }
+      paramsRef.current = next;
+      setParams(next);
+      engineRef.current?.setParams(next);
+      const p = pathRef.current;
+      if (p) {
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => saveLiveParams(p, next), 400);
+      }
+    },
+    [currentHistory, refreshHistButtons]
+  );
+
+  const updateParam = useCallback(
+    (key: LiveParamKey, value: number) => {
+      resumeAudio();
+      let next = { ...paramsRef.current, [key]: value };
       // NOVIDADE 1 — PRESSÃO: macro de caráter ao vivo. Mexer no knob ajusta
       // drive + presença + cola + largura + reverb de forma coerente (os
       // outros knobs se movem junto, dá pra ajustar depois individualmente).
@@ -255,15 +322,32 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         const macro = pressureMacro(value);
         next = { ...next, driveDb: macro.driveDb, eqHighDb: macro.eqHighDb, comp: macro.comp, stereo: macro.stereo, reverb: macro.reverb };
       }
-      engineRef.current?.setParams(next);
-      const p = pathRef.current;
-      if (p) {
-        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => saveLiveParams(p, next), 400);
-      }
-      return next;
-    });
-  }, [resumeAudio]);
+      applyParams(next, true);
+    },
+    [applyParams, resumeAudio]
+  );
+
+  /** Desfaz a última alteração (restaura before, sem registrar de novo). */
+  const doUndo = useCallback(() => {
+    resumeAudio();
+    const entry = currentHistory().undo();
+    if (!entry) return;
+    const next = { ...paramsRef.current };
+    for (const change of entry.changes) next[change.key] = change.before;
+    applyParams(next, false);
+    refreshHistButtons();
+  }, [applyParams, currentHistory, refreshHistButtons, resumeAudio]);
+
+  /** Refaz a última alteração desfeita (restaura after, sem registrar). */
+  const doRedo = useCallback(() => {
+    resumeAudio();
+    const entry = currentHistory().redo();
+    if (!entry) return;
+    const next = { ...paramsRef.current };
+    for (const change of entry.changes) next[change.key] = change.after;
+    applyParams(next, false);
+    refreshHistButtons();
+  }, [applyParams, currentHistory, refreshHistButtons, resumeAudio]);
 
   /** Liga/desliga um efeito (bypass) — o ajuste dos knobs é preservado. */
   const toggleBypass = useCallback(
@@ -283,6 +367,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const resetParams = useCallback(() => {
     const next = { ...defaultLiveParams(), rootKey: referenceRoot };
     const nextBypass = defaultLiveBypass();
+    // v0.2.26: restaurar padrões limpa o histórico do instrumento.
+    currentHistory().clear();
+    paramsRef.current = next;
     setParams(next);
     setBypass(nextBypass);
     engineRef.current?.setParams(next);
@@ -291,8 +378,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       clearLiveParams(pathRef.current);
       clearLiveBypass(pathRef.current);
     }
+    refreshHistButtons();
     pushToast('Controles restaurados aos padrões.');
-  }, [pushToast, referenceRoot]);
+  }, [currentHistory, pushToast, referenceRoot, refreshHistButtons]);
 
   const noteOn = useCallback(
     (note: number, velocity?: number) => {
@@ -345,6 +433,27 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       window.removeEventListener('keyup', onKeyUp);
     };
   }, [noteOn, noteOff]);
+
+  // v0.2.26: atalhos de Desfazer/Refazer — Ctrl+Z / Ctrl+Y (Windows) e
+  // Cmd+Z / Cmd+Shift+Z (macOS). Ignora quando digitando num campo.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      if (target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        doUndo();
+      } else if ((key === 'y' && !e.shiftKey) || (key === 'z' && e.shiftKey)) {
+        e.preventDefault();
+        doRedo();
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [doUndo, doRedo]);
 
   async function openFilePicker() {
     try {
@@ -538,6 +647,24 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               <button type="button" className="btn ghost small" onClick={() => void connectMidi()} title="Conectar teclado USB MIDI (Web MIDI)">
                 <Usb size={14} /> {midiConnected ? `MIDI: ${midiDevices[0] ?? 'conectado'}` : 'Conectar MIDI'}
               </button>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={doUndo}
+                disabled={!canUndo}
+                title="Desfazer (Ctrl+Z / Cmd+Z)"
+              >
+                <Undo2 size={14} /> Desfazer
+              </button>
+              <button
+                type="button"
+                className="btn ghost small"
+                onClick={doRedo}
+                disabled={!canRedo}
+                title="Refazer (Ctrl+Y / Cmd+Shift+Z)"
+              >
+                <Redo2 size={14} /> Refazer
+              </button>
               <button type="button" className="btn ghost small" onClick={resetParams} title="Restaurar todos os controles aos padrões">
                 <RotateCcw size={14} /> Padrões
               </button>
@@ -632,6 +759,28 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               <div className="live-knobs live-knobs-main">
                 {renderKnob('volumeDb')}
                 {renderKnob('pan')}
+                {/* v0.2.26: seletor de modo de pan — BALANCE (padrão) | STEREO PAN */}
+                <div className="live-panmode">
+                  <span className="live-panmode-label">MODO DE PAN</span>
+                  <div className="live-panmode-btns" role="group" aria-label="Modo de pan">
+                    <button
+                      type="button"
+                      className={Math.round(params.panMode) === 0 ? 'active' : ''}
+                      onClick={() => updateParam('panMode', 0)}
+                      title="BALANCE: preserva a imagem estéreo (padrão)"
+                    >
+                      BALANCE
+                    </button>
+                    <button
+                      type="button"
+                      className={Math.round(params.panMode) === 1 ? 'active' : ''}
+                      onClick={() => updateParam('panMode', 1)}
+                      title="STEREO PAN: panorâmica estéreo real (desloca a imagem)"
+                    >
+                      STEREO PAN
+                    </button>
+                  </div>
+                </div>
                 {renderKnob('tuneCents')}
                 {renderKnob('attackMs')}
                 {renderKnob('releaseMs')}
