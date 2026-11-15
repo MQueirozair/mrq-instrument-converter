@@ -32,6 +32,7 @@ import {
   type LiveParams,
 } from './liveControls';
 import { LiveToolsChain } from './liveToolsChain';
+import { createPanBalanceNode, type PanBalanceNode } from './panBalance';
 
 const SMOOTH = 0.015; // constante de tempo dos setTargetAtTime (sem cliques)
 const HAAS_SEC = 0.009; // atraso do alargador Haas (mesmo do Shimmer do RackEngine)
@@ -170,7 +171,7 @@ export class LiveFxChain {
   private widthRightDry: GainNode;
   private tools: LiveToolsChain;
   private masterGain: GainNode;
-  private masterPan: StereoPannerNode;
+  private masterPan: PanBalanceNode;
   private limiter: DynamicsCompressorNode;
   private reverbPredelay: DelayNode;
   private convolver: ConvolverNode;
@@ -273,9 +274,11 @@ export class LiveFxChain {
     this.tools = new LiveToolsChain(ctx, initial);
     widthMerger.connect(this.tools.input);
 
-    // --- Master (volume + pan) + limiter de teto (segurança anti-clipping) ---
+    // --- Master (volume + pan/balance) + limiter de teto (anti-clipping) ---
+    // v0.2.25: pan/balance profissional (panBalance.ts) — BALANCE preserva a
+    // imagem estéreo; é o único pan mestre (sem duplo processamento).
     this.masterGain = ctx.createGain();
-    this.masterPan = ctx.createStereoPanner();
+    this.masterPan = createPanBalanceNode(ctx, initial.pan, 'balance');
     this.limiter = ctx.createDynamicsCompressor();
     this.limiter.threshold.value = -1.0;
     this.limiter.knee.value = 0;
@@ -283,8 +286,8 @@ export class LiveFxChain {
     this.limiter.attack.value = 0.001;
     this.limiter.release.value = 0.1;
     this.tools.output.connect(this.masterGain);
-    this.masterGain.connect(this.masterPan);
-    this.masterPan.connect(this.limiter);
+    this.masterGain.connect(this.masterPan.input);
+    this.masterPan.output.connect(this.limiter);
     this.limiter.connect(this.output);
 
     // --- Reverb (envio paralelo a partir da saída estéreo da largura) ---
@@ -383,7 +386,7 @@ export class LiveFxChain {
 
     // Master
     t(this.masterGain.gain, dbToGain(p.volumeDb));
-    t(this.masterPan.pan, p.pan);
+    this.masterPan.setPan(p.pan);
   }
 
   /**

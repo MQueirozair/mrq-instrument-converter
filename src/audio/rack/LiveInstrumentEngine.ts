@@ -134,7 +134,8 @@ export class LiveInstrumentEngine {
   }
 
   private transpose(note: number): number {
-    return note + (Math.round(this.params.rootKey) - this.referenceRoot);
+    // v0.2.25: OITAVA desloca em oitavas inteiras (12 semitons cada).
+    return note + (Math.round(this.params.rootKey) - this.referenceRoot) + Math.round(this.params.octave) * 12;
   }
 
   noteOn(note: number, velocity: number) {
@@ -144,6 +145,10 @@ export class LiveInstrumentEngine {
     const original = Math.round(note);
     const transposed = this.transpose(original);
     if (transposed < 0 || transposed > 127) return;
+    // v0.2.25: MODO MONO — uma voz por vez (a nota nova mata as anteriores).
+    if (Math.round(this.params.playMode) === 1 && this.heldNotes.size > 0) {
+      this.allNotesOff();
+    }
     // Curva de velocity (VELOCIDADE CURVA) antes do disparo.
     const shaped = applyVelocityCurve(vel, this.params.velCurve);
     // Re-toque durante o release desta mesma nota: cancela o noteOff

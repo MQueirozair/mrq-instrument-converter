@@ -76,6 +76,11 @@ export interface LiveParams {
   // --- Novidades inventadas (v0.2.23) ---
   pressure: number;
   ecoVivo: number;
+  // --- Linha MIDI (v0.2.25) — canal, oitava, velocity padrão, modo ---
+  midiChannel: number;
+  octave: number;
+  defaultVelocity: number;
+  playMode: number; // 0 = Normal (polifônico), 1 = Mono (uma voz por vez)
 }
 
 export type LiveParamKey = keyof LiveParams;
@@ -89,6 +94,12 @@ export interface LiveParamDef {
   step: number;
   format: (v: number) => string;
   default: number;
+  /** Unidade exibida no tooltip/valor (ex.: 'dB', 'ms', '%', 'ct'). */
+  unit?: string;
+  /** Curva de resposta do controle ('linear' ou 'log' — afeta o arraste). */
+  curve?: 'linear' | 'log';
+  /** Grupo/painel a que o controle pertence (organização visual). */
+  group?: 'midi' | 'amplitude' | 'tonalidade' | 'eq' | 'efeito';
 }
 
 const f1 = (v: number) => v.toFixed(1);
@@ -154,6 +165,11 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   // --- Novidades inventadas (v0.2.23) ---
   pressure: { key: 'pressure', label: 'PRESSÃO', min: 0, max: 100, step: 1, format: f1, default: 0 },
   ecoVivo: { key: 'ecoVivo', label: 'ECO VIVO', min: 0, max: 100, step: 1, format: f1, default: 0 },
+  // --- Linha MIDI (v0.2.25) ---
+  midiChannel: { key: 'midiChannel', label: 'CANAL MIDI', min: 1, max: 16, step: 1, format: (v) => String(Math.round(v)), default: 1 },
+  octave: { key: 'octave', label: 'OITAVA', min: -2, max: 2, step: 1, format: (v) => String(Math.round(v)), default: 0 },
+  defaultVelocity: { key: 'defaultVelocity', label: 'VELOCIDADE PADRÃO', min: 1, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 100 },
+  playMode: { key: 'playMode', label: 'MODO DE REPRODUÇÃO', min: 0, max: 1, step: 1, format: (v) => (Math.round(v) === 1 ? 'Mono' : 'Normal'), default: 0 },
 };
 
 /** Ordem dos knobs da linha 1 (depois dos steppers). */
@@ -191,6 +207,9 @@ export const LIVE_KNOBS_TOOLS: LiveParamKey[] = [
 
 /** Knobs das 2 novidades inventadas (v0.2.23). */
 export const LIVE_KNOBS_NEW: LiveParamKey[] = ['pressure', 'ecoVivo'];
+
+/** Controles da linha MIDI (v0.2.25) — seletores/steppers, não knobs. */
+export const LIVE_MIDI_ROW: LiveParamKey[] = ['midiChannel', 'octave', 'defaultVelocity', 'playMode'];
 
 export function defaultLiveParams(): LiveParams {
   const out = {} as LiveParams;
@@ -304,6 +323,51 @@ export function noteName(note: number): string {
   const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
   const n = Math.round(note);
   return `${names[((n % 12) + 12) % 12]}${Math.floor(n / 12) - 1}`;
+}
+
+// ---------------------------------------------------------------------------
+// Sistema universal de controles (v0.2.25) — conversão valor↔posição (curvas)
+// e rótulos. Uma única fonte de verdade: os controles leem/escrevem aqui.
+// ---------------------------------------------------------------------------
+
+/**
+ * Valor real → posição normalizada (0..1) do controle, conforme a curva.
+ * 'log' distribui o arraste (útil em tempos/frequências).
+ */
+export function valueToPosition(value: number, min: number, max: number, curve: 'linear' | 'log' = 'linear'): number {
+  if (max <= min) return 0;
+  const clamped = Math.min(max, Math.max(min, value));
+  const t = (clamped - min) / (max - min);
+  if (curve === 'log') {
+    // log sobre a faixa deslocada (evita log de 0/negativo); faixa travada
+    // em >= 0 pra nunca gerar NaN.
+    const lo = Math.log10(1 + Math.max(0, min));
+    const hi = Math.log10(1 + Math.max(0, max));
+    const v = Math.log10(1 + Math.max(0, clamped));
+    return hi > lo ? Math.min(1, Math.max(0, (v - lo) / (hi - lo))) : t;
+  }
+  return t;
+}
+
+/** Posição normalizada (0..1) → valor real, conforme a curva. */
+export function positionToValue(position: number, min: number, max: number, curve: 'linear' | 'log' = 'linear'): number {
+  const t = Math.min(1, Math.max(0, position));
+  if (curve === 'log') {
+    const lo = Math.log10(1 + Math.max(0, min));
+    const hi = Math.log10(1 + Math.max(0, max));
+    return Math.min(max, Math.max(min, Math.pow(10, lo + t * (hi - lo)) - 1));
+  }
+  return min + t * (max - min);
+}
+
+/**
+ * Rótulo L/C/R do PAN (interface -100..+100): L100, L50, C, R50, R100.
+ * `pan` é o valor interno normalizado (-1..+1).
+ */
+export function panDisplayLabel(pan: number): string {
+  const v = Math.round(Math.min(1, Math.max(-1, pan)) * 100);
+  if (v === 0) return 'C';
+  return v < 0 ? `L${-v}` : `R${v}`;
 }
 
 // ---------------------------------------------------------------------------

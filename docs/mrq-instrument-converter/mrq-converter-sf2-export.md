@@ -314,3 +314,51 @@ rack de instrumentos ao vivo. Reaproveita o motor existente, sem duplicar:
 - **Testes:** `test-live-controls` ampliado pra 33 casos (padrões planos,
   `defaultLiveBypass`/`normalizeLiveBypass`/`applyBypass`/
   `effectIdForParam`, persistência do bypass).
+
+## 17. v0.2.25 — redesign premium + PAN vs BALANCE + sistema universal de controles
+
+Redesign completo da página Controles ao Vivo seguindo a foto de referência
+(visual de sampler profissional), com correção arquitetural dos controles:
+
+- **Auditoria (Fase 1):** o pan usava `StereoPannerNode` (pan, não balance;
+  deslocava a imagem estéreo) e convivia com o pan por zona do
+  `MrqLayerVoice` (duplo processamento potencial); o Knob era básico (sem
+  tamanhos, sem edição numérica, sem unidade/curva); não havia registro
+  universal de controles nem undo; faltavam medidor de saída e linha MIDI.
+- **PAN vs BALANCE (Fase 3, prioridade máxima):** novo `panBalance.ts` — nó
+  com upmix mono→estéreo + splitter + ganhos L/R + merger. Lei **balance**
+  (um lado em 1.0, o outro atenua — preserva a imagem estéreo) e lei
+  **equal-power** (loudness constante, preferida pra mono). Rótulos
+  **L100/L50/C/R50/R100** (interno −1..+1, interface −100..+100). É o único
+  pan mestre da cadeia. Funções puras `balanceGains`/`equalPowerGains`/
+  `panBalanceGains`/`panLabel` testadas nos 5 pontos (−100,−50,0,+50,+100).
+- **Sistema universal de controles (Fase 2):** `LiveParamDef` ganhou
+  `unit`, `curve` ('linear'|'log') e `group`; helpers `valueToPosition`/
+  `positionToValue` (curvas reversíveis, blindadas contra NaN) e
+  `panDisplayLabel`. Uma única fonte de verdade — os controles leem/escrevem
+  pelo registro.
+- **Knobs premium (Fase 4):** `Knob.tsx` redesenhado — corpo circular com
+  profundidade, arco luminoso azul/ciano com glow, ponteiro de precisão,
+  3 tamanhos (sm/md/lg), valor clicável pra digitar, tooltip com
+  nome/valor/unidade, duplo-clique reseta, setas do teclado.
+- **Linha MIDI (Fase 5):** 4 parâmetros reais novos — **CANAL MIDI** (1–16,
+  filtra a entrada Web MIDI), **OITAVA** (−2..+2, transposição), **VELOCIDADE
+  PADRÃO** (velocity do teclado na tela/computador) e **MODO DE REPRODUÇÃO**
+  (Normal polifônico / Mono uma voz). Total: 60 controles.
+- **Módulos de efeito (Fase 5):** cada efeito virou um módulo (nome + botão
+  de energia/bypass + knob principal + slider vertical + knobs extras),
+  organizados em abas **Efeitos / Ao Vivo · Ferramentas · Novidades** (foto).
+  EQ e Drive ganharam botões de energia na linha principal. Novos
+  componentes: `VerticalSlider.tsx`, `EffectModule.tsx`.
+- **Página (Fase 5):** barra lateral com os instrumentos convertidos
+  (clique pra trocar), cabeçalho com status (Pronto / Polifonia 128 /
+  Latência real do contexto), **medidor de saída** (analyser + rAF, sem
+  re-render), gráfico da **Curva de Velocidade** (SVG espelhando
+  `applyVelocityCurve`) e barra de status (MIDI / driver / sistema).
+- **Persistência (Fase 6):** os 4 parâmetros novos entram no
+  `mrq.liveControls.v1` existente (clamp/default automáticos); bypass segue
+  na chave separada.
+- **Testes (Fase 7):** `test-live-controls` ampliado pra 39 casos (leis de
+  pan/balance nos 5 pontos, loudness constante do equal-power, curvas
+  reversíveis sem NaN, linha MIDI, 60 controles). Bateria completa do
+  projeto passando; build e lint OK.

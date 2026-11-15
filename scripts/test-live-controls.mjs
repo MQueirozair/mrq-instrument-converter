@@ -75,7 +75,18 @@ const {
   loadLiveBypass,
   saveLiveBypass,
   clearLiveBypass,
+  LIVE_MIDI_ROW,
+  valueToPosition,
+  positionToValue,
+  panDisplayLabel,
 } = await compileToNode('src/audio/rack/liveControls.ts');
+
+const {
+  balanceGains,
+  equalPowerGains,
+  panBalanceGains,
+  panLabel,
+} = await compileToNode('src/audio/rack/panBalance.ts');
 
 let passed = 0;
 function test(name, fn) {
@@ -85,9 +96,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('56 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('60 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 56);
+  assert.equal(keys.length, 60);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);
@@ -95,14 +106,15 @@ test('56 controles definidos, todos com min < max e padrão dentro da faixa', ()
   }
 });
 
-test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades = 56', () => {
+test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 60', () => {
   assert.equal(LIVE_STEPPERS.length, 5);
   assert.equal(LIVE_KNOBS_ROW1.length, 10);
   assert.equal(LIVE_KNOBS_FX.length, 12);
   assert.equal(LIVE_KNOBS_TOOLS.length, 27);
   assert.equal(LIVE_KNOBS_NEW.length, 2);
-  const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW];
-  assert.equal(new Set(all).size, 56);
+  assert.equal(LIVE_MIDI_ROW.length, 4);
+  const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW, ...LIVE_MIDI_ROW];
+  assert.equal(new Set(all).size, 60);
 });
 
 test('padrões das ferramentas: tudo desligado/neutro por padrão', () => {
@@ -450,6 +462,80 @@ test('persistência do bypass: salva, carrega e apaga por instrumento', () => {
   assert.equal(loaded.reverb, false);
   clearLiveBypass(path);
   assert.deepEqual(loadLiveBypass(path), defaultLiveBypass());
+});
+
+// --- Pan / Balance (v0.2.25) ---
+test('balanceGains: L100/C/R100 e meio — um lado sempre em 1.0 (imagem preservada)', () => {
+  assert.deepEqual(balanceGains(-1), { left: 1, right: 0 });
+  assert.deepEqual(balanceGains(0), { left: 1, right: 1 });
+  assert.deepEqual(balanceGains(1), { left: 0, right: 1 });
+  assert.deepEqual(balanceGains(-0.5), { left: 1, right: 0.5 });
+  assert.deepEqual(balanceGains(0.5), { left: 0.5, right: 1 });
+  // clamp fora da faixa
+  assert.deepEqual(balanceGains(-5), { left: 1, right: 0 });
+  assert.deepEqual(balanceGains(5), { left: 0, right: 1 });
+});
+
+test('equalPowerGains: loudness constante — centro em 0.707 nos dois lados', () => {
+  const c = equalPowerGains(0);
+  assert.ok(Math.abs(c.left - Math.SQRT1_2) < 1e-9);
+  assert.ok(Math.abs(c.right - Math.SQRT1_2) < 1e-9);
+  const l = equalPowerGains(-1);
+  assert.ok(Math.abs(l.left - 1) < 1e-9 && Math.abs(l.right) < 1e-9);
+  const r = equalPowerGains(1);
+  assert.ok(Math.abs(r.left) < 1e-9 && Math.abs(r.right - 1) < 1e-9);
+  // soma de potências constante (loudness constante)
+  for (const p of [-0.75, -0.25, 0.25, 0.75]) {
+    const g = equalPowerGains(p);
+    assert.ok(Math.abs(g.left * g.left + g.right * g.right - 1) < 1e-9, `pan ${p}: potência constante`);
+  }
+});
+
+test('panBalanceGains: modo balance vs pan', () => {
+  assert.deepEqual(panBalanceGains(0.5, 'balance'), { left: 0.5, right: 1 });
+  assert.deepEqual(panBalanceGains(0.5, 'pan'), equalPowerGains(0.5));
+});
+
+test('panLabel / panDisplayLabel: L100, L50, C, R50, R100', () => {
+  assert.equal(panLabel(-1), 'L100');
+  assert.equal(panLabel(-0.5), 'L50');
+  assert.equal(panLabel(0), 'C');
+  assert.equal(panLabel(0.5), 'R50');
+  assert.equal(panLabel(1), 'R100');
+  assert.equal(panDisplayLabel(-1), 'L100');
+  assert.equal(panDisplayLabel(0.3), 'R30');
+  assert.equal(panDisplayLabel(0), 'C');
+});
+
+// --- Sistema universal de controles (v0.2.25) ---
+test('valueToPosition/positionToValue: linear é identidade; log é reversível', () => {
+  assert.equal(valueToPosition(50, 0, 100, 'linear'), 0.5);
+  assert.equal(positionToValue(0.5, 0, 100, 'linear'), 50);
+  assert.equal(valueToPosition(0, 0, 100, 'linear'), 0);
+  assert.equal(valueToPosition(100, 0, 100, 'linear'), 1);
+  // log: ida e volta preservam o valor (sem NaN)
+  for (const v of [1, 10, 50, 200, 1000, 5000]) {
+    const pos = valueToPosition(v, 0, 5000, 'log');
+    const back = positionToValue(pos, 0, 5000, 'log');
+    assert.ok(Number.isFinite(back), `log reversível em ${v}`);
+    assert.ok(Math.abs(back - v) < 1e-6, `log ida/volta ${v} → ${back}`);
+  }
+  // limites: nunca NaN/infinito
+  assert.ok(Number.isFinite(valueToPosition(-50, 0, 100, 'log')));
+  assert.ok(Number.isFinite(positionToValue(2, 0, 100, 'log')));
+});
+
+test('linha MIDI (v0.2.25): canal 1-16, oitava -2..2, velocity padrão, modo', () => {
+  const p = defaultLiveParams();
+  assert.equal(p.midiChannel, 1);
+  assert.equal(p.octave, 0);
+  assert.equal(p.defaultVelocity, 100);
+  assert.equal(p.playMode, 0);
+  const clamped = clampLiveParams({ midiChannel: 99, octave: -9, defaultVelocity: 0, playMode: 5 });
+  assert.equal(clamped.midiChannel, 16);
+  assert.equal(clamped.octave, -2);
+  assert.equal(clamped.defaultVelocity, 1);
+  assert.equal(clamped.playMode, 1);
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);
