@@ -527,3 +527,21 @@ a amplitude do áudio.
   attack/hold 0, attack 500/hold 1000, attack 100/hold 3000, hold 0
   (compat), noteOff em cada estágio, CC64, polifonia, curva e
   persistência.
+
+## 23. v0.2.32 — Layout compacto: tudo visível sem scroll
+
+Correção do layout da página de Controles ao Vivo: a barra de status
+parecia flutuar sobre os controles, os knobs estavam gigantes e o
+conteúdo (1032px) não cabia na janela (720px), exigindo scroll.
+
+- **Knobs menores:** corpos sm 34 / md 44 / lg 54px (antes 46/64/78),
+  rótulos em 8px, caixas de valor mais estreitas — a linha principal
+  agora cabe em **1 linha em 1280px** (12 knobs + panmode + 2 gráficos).
+- **Altura total 720px em 1280×720** (antes 1032px): header, linha MIDI,
+  knobs, abas, 6 módulos FX, teclado e barra de status — **tudo visível
+  de cima a baixo, sem scroll**. Teclas do teclado mais curtas (40px),
+  sliders verticais mais curtos (62px), paddings/gaps reduzidos.
+- **Barra de status limpa** no rodapé, sem sobreposição.
+- **Validação:** screenshots Playwright em 1280×720, 1366×768, 1600×900
+  e 1920×1080 — layout íntegro, sem overflow, em todos. lint + build +
+  59/59 testes passando. Nenhum DSP alterado.

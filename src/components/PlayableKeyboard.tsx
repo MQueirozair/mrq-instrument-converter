@@ -19,8 +19,8 @@ const BLACK_NOTES = new Set([1, 3, 6, 8, 10]);
 const WHITE_X_IN_OCTAVE: Record<number, number> = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 };
 const BLACK_X_IN_OCTAVE: Record<number, number> = { 1: 0.62, 3: 1.65, 6: 3.55, 8: 4.58, 10: 5.65 };
 const BLACK_KEY_WIDTH = 0.62;
-const WHITE_KEY_HEIGHT = 64;
-const BLACK_KEY_HEIGHT = 40;
+const WHITE_KEY_HEIGHT = 40;
+const BLACK_KEY_HEIGHT = 26;
 const LABEL_HEIGHT = 12;
 
 interface KeyRect {

@@ -99,7 +99,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
           unit={mainDef.unit}
           onChange={(v) => onParam(main, v)}
           disabled={bypassed}
-          size="lg"
+          size="md"
           hideLabel
         />
         {sliderDef && slider && (

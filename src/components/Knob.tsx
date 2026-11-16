@@ -32,7 +32,7 @@ interface KnobProps {
   hideLabel?: boolean;
 }
 
-const SIZES: Record<KnobSize, number> = { sm: 46, md: 64, lg: 78 };
+const SIZES: Record<KnobSize, number> = { sm: 34, md: 44, lg: 54 };
 
 export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit, hideLabel }: KnobProps) {
   const dragRef = useRef<{ startY: number; startValue: number } | null>(null);
