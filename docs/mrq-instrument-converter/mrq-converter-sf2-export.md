@@ -463,3 +463,36 @@ referência — **nenhum parâmetro ou integração de áudio foi alterado**.
 - **Validação:** screenshots reais (Playwright) em 1280×720, 1366×768,
   1600×900 e 1920×1080 — layout íntegro em todos. 46/46 testes, build e
   lint passando.
+
+## 21. v0.2.30 — Fidelidade máxima à foto de referência (image-55)
+
+Ajuste fino da página de Controles ao Vivo pra espelhar a foto de
+referência pixel a pixel — **nenhum DSP foi alterado** (só metadado de
+exibição `unit` nas definições de parâmetro, campo já previsto na
+interface).
+
+- **Unidades nos knobs:** o valor exibido agora mostra a unidade
+  (`0.0 dB`, `5.0 ms`, `100.0%`, `0.0 ct`, `Hz`, `bits`...) — antes só
+  aparecia no tooltip. Campo `unit` adicionado às 49 definições de
+  `LIVE_PARAM_DEFS` (display-only, zero impacto no áudio) e exibido pelo
+  `Knob` (com `%` colado ao número, como na foto).
+- **6 módulos FX da foto:** Reverb, Chorus, Delay, Compressor,
+  Distortion e EQ Paramétrico (com gráfico de resposta) — extras
+  deslocados pra aba Ferramentas.
+- **Abas de informação:** Camadas, Grupos, Samples e Mapeamento com
+  metadados reais do instrumento carregado.
+- **Faixa de notas/velocidades movida pra aba Mapeamento:** a linha
+  "Nota Min/Nota Max/Tecla Raiz/Velocidade Min/Velocidade Max" não
+  existe na foto — os 5 steppers (controles reais, ainda ligados ao DSP)
+  agora vivem na aba **Mapeamento**, junto dos metadados do instrumento.
+- **Botão Hold no teclado:** pedal de sustain real — com Hold ligado,
+  soltar a tecla não desliga a nota (o `noteOff` fica retido); ao
+  desligar, todas as notas presas são liberadas. Vale pra teclado da
+  tela, teclado do computador e MIDI USB.
+- **Gráfico do EQ Paramétrico:** curva com nós em todos os pontos de
+  controle (graves/médios/agudos reais), como na foto.
+- **Sidebar com Data:** campo "Data" (dd/mm/aaaa) real, vindo de
+  `addedAt` da entrada na lista de instrumentos convertidos.
+- **Validação:** screenshots Playwright em 1280×720, 1366×768, 1600×900
+  e 1920×1080 — 6 módulos FX em 1 linha em todos os tamanhos, sem
+  sobreposição nem overflow. lint + build + 46/46 testes passando.

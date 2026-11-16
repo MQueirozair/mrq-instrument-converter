@@ -1,8 +1,10 @@
 /**
- * Módulo de efeito (v0.2.25) — visual da foto de referência: nome + botão
- * de energia (bypass) no topo, knob principal grande, slider vertical
- * secundário e knobs pequenos extras. O botão de energia liga/desliga o
- * efeito (bypass) sem perder o ajuste; desligado, os controles apagam.
+ * Módulo de efeito (v0.2.25, ajustado na v0.2.30) — visual da foto de
+ * referência: nome + botão de energia (bypass) no topo, knob principal
+ * grande com valor abaixo, slider vertical secundário com rótulo abaixo
+ * (ou gráfico, no EQ Paramétrico) e knobs pequenos extras. O botão de
+ * energia liga/desliga o efeito (bypass) sem perder o ajuste; desligado,
+ * os controles apagam.
  */
 import { Power } from 'lucide-react';
 import Knob from './Knob';
@@ -11,10 +13,16 @@ import { LIVE_PARAM_DEFS, type LiveEffectDef, type LiveParamKey, type LiveParams
 
 export interface EffectModuleConfig {
   effect: LiveEffectDef;
+  /** Título exibido no módulo (padrão: effect.label) — v0.2.30. */
+  title?: string;
   /** Knob principal (mix/quantidade). */
   main: LiveParamKey;
   /** Parâmetro do slider vertical (opcional). */
   slider?: LiveParamKey;
+  /** Rótulo curto do slider (Wet, Depth, Time...) — v0.2.30. */
+  sliderLabel?: string;
+  /** Gráfico à direita do knob (EQ Paramétrico) — v0.2.30. */
+  graph?: 'eq';
   /** Knobs pequenos extras. */
   extras?: LiveParamKey[];
 }
@@ -27,15 +35,48 @@ interface EffectModuleProps {
   onToggleBypass: () => void;
 }
 
+/** Curva de resposta do EQ de 3 bandas (graves/médios/agudos) em SVG —
+ *  espelha as 3 bandas reais (low/mid/high) com nós nos pontos de controle,
+ *  como na foto de referência. */
+function EqGraph({ params }: { params: LiveParams }) {
+  const low = params.eqLowDb;
+  const mid = params.eqMidDb;
+  const high = params.eqHighDb;
+  // Pontos de controle (x: 0..100, y: ganho -15..+15 → 8..52 invertido).
+  const y = (db: number) => 30 - (db / 15) * 22;
+  const nodes: Array<[number, number]> = [
+    [2, y(low)],
+    [18, y(low * 0.85)],
+    [34, y(mid * 0.7)],
+    [50, y(mid)],
+    [66, y(mid * 0.7)],
+    [82, y(high * 0.85)],
+    [98, y(high)],
+  ];
+  const pts = nodes.map(([x, yy]) => `${x},${yy.toFixed(1)}`).join(' ');
+  return (
+    <div className="fx-eq-graph">
+      <svg viewBox="0 0 100 60" width="100%" height="86" aria-hidden="true">
+        <line x1="0" y1="30" x2="100" y2="30" stroke="#273447" strokeWidth="1" />
+        <polyline points={pts} fill="none" stroke="#42d9ff" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+        {nodes.map(([x, yy], i) => (
+          <circle key={i} cx={x} cy={yy} r="2.6" fill="#0c1220" stroke="#42d9ff" strokeWidth="1.6" />
+        ))}
+      </svg>
+      <span className="vslider-label">RESPOSTA</span>
+    </div>
+  );
+}
+
 export default function EffectModule({ config, params, bypassed, onParam, onToggleBypass }: EffectModuleProps) {
-  const { effect, main, slider, extras } = config;
+  const { effect, title, main, slider, sliderLabel, graph, extras } = config;
   const mainDef = LIVE_PARAM_DEFS[main];
   const sliderDef = slider ? LIVE_PARAM_DEFS[slider] : null;
 
   return (
     <div className={`fx-module${bypassed ? ' bypassed' : ''}`}>
       <div className="fx-module-head">
-        <span className="fx-module-name">{effect.label}</span>
+        <span className="fx-module-name">{title ?? effect.label}</span>
         <button
           type="button"
           className={`fx-power${bypassed ? ' off' : ''}`}
@@ -55,13 +96,15 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
           step={mainDef.step}
           defaultValue={mainDef.default}
           format={mainDef.format}
+          unit={mainDef.unit}
           onChange={(v) => onParam(main, v)}
           disabled={bypassed}
           size="lg"
+          hideLabel
         />
         {sliderDef && slider && (
           <VerticalSlider
-            label={sliderDef.label}
+            label={sliderLabel ?? sliderDef.label}
             value={params[slider]}
             min={sliderDef.min}
             max={sliderDef.max}
@@ -72,6 +115,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
             disabled={bypassed}
           />
         )}
+        {graph === 'eq' && <EqGraph params={params} />}
       </div>
       {extras && extras.length > 0 && (
         <div className="fx-module-extras">
@@ -87,6 +131,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
                 step={def.step}
                 defaultValue={def.default}
                 format={def.format}
+                unit={def.unit}
                 onChange={(v) => onParam(key, v)}
                 disabled={bypassed}
                 size="sm"

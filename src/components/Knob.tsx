@@ -28,11 +28,13 @@ interface KnobProps {
   disabled?: boolean;
   size?: KnobSize;
   unit?: string;
+  /** Esconde o rótulo acima do knob (módulos de efeito) — v0.2.30. */
+  hideLabel?: boolean;
 }
 
 const SIZES: Record<KnobSize, number> = { sm: 46, md: 64, lg: 78 };
 
-export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit }: KnobProps) {
+export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit, hideLabel }: KnobProps) {
   const dragRef = useRef<{ startY: number; startValue: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const valueRef = useRef(value);
@@ -111,7 +113,7 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
 
   return (
     <div className={`mrq-knob-control knob-${size}${disabled ? ' disabled' : ''}`} ref={rootRef}>
-      <span className="mrq-knob-label">{label}</span>
+      {!hideLabel && <span className="mrq-knob-label">{label}</span>}
       <div
         className="mrq-knob"
         style={knobStyle}
@@ -158,6 +160,7 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
           }}
         >
           {shown}
+          {unit ? <span className="mrq-knob-unit">{unit === '%' ? '%' : ` ${unit}`}</span> : null}
         </button>
       )}
     </div>

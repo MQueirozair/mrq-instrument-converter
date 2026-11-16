@@ -95,14 +95,21 @@ function heroFor(name: string): string {
 
 /** Configuração dos módulos de efeito (knob principal + slider + extras). */
 const FX_MODULES: Record<string, EffectModuleConfig[]> = {
+  // v0.2.30: 6 módulos da foto de referência (Reverb, Chorus, Delay,
+  // Compressor, Distortion, EQ Paramétrico) — todos com parâmetros reais.
   efeitos: [
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'reverb')!, main: 'reverb', slider: 'reverbSize', extras: ['reverbDamp', 'reverbPredelayMs', 'reverbColor'] },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'stereo')!, main: 'stereo' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'delay')!, main: 'delay', slider: 'delayTimeMs', extras: ['delayFeedback'] },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'chorus')!, main: 'chorus', slider: 'chorusDepth', extras: ['chorusRateHz'] },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'reverb')!, title: 'Reverb', main: 'reverb', slider: 'reverbSize', sliderLabel: 'Wet' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'chorus')!, title: 'Chorus', main: 'chorus', slider: 'chorusDepth', sliderLabel: 'Depth' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'delay')!, title: 'Delay', main: 'delay', slider: 'delayTimeMs', sliderLabel: 'Time' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'comp')!, title: 'Compressor', main: 'comp' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'drive')!, title: 'Distortion', main: 'driveDb' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'eq')!, title: 'EQ Paramétrico', main: 'eqMidDb', graph: 'eq' },
   ],
   ferramentas: [
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'comp')!, main: 'comp' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'reverb')!, main: 'reverbDamp', extras: ['reverbPredelayMs', 'reverbColor'] },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'stereo')!, main: 'stereo' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'delay')!, main: 'delayFeedback' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'chorus')!, main: 'chorusRateHz' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'phaser')!, main: 'phaserMix', slider: 'phaserDepth', extras: ['phaserRate'] },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'flanger')!, main: 'flangerMix', slider: 'flangerDepth', extras: ['flangerRate', 'flangerFeedback'] },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'tremolo')!, main: 'tremoloDepth', slider: 'tremoloRate' },
@@ -120,6 +127,11 @@ const FX_MODULES: Record<string, EffectModuleConfig[]> = {
   novidades: [
     { effect: LIVE_EFFECTS.find((e) => e.id === 'ecoVivo')!, main: 'ecoVivo' },
   ],
+  // v0.2.30: abas de informação (sem módulos de efeito — mostram metadados).
+  camadas: [],
+  grupos: [],
+  samples: [],
+  mapeamento: [],
 };
 
 type FxTab = keyof typeof FX_MODULES;
@@ -150,6 +162,11 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   // v0.2.29: busca da lista de instrumentos + velocity da última nota tocada.
   const [search, setSearch] = useState('');
   const [lastVelocity, setLastVelocity] = useState(0);
+  // v0.2.30: Hold (pedal de sustain) — com ele ligado, soltar a tecla não
+  // desliga a nota; ela só é liberada ao desligar o Hold.
+  const [hold, setHold] = useState(false);
+  const holdRef = useRef(false);
+  const heldNotesRef = useRef<Set<number>>(new Set());
 
   const ctxRef = useRef<AudioContext | null>(null);
   const engineRef = useRef<LiveInstrumentEngine | null>(null);
@@ -512,10 +529,37 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   );
 
   const noteOff = useCallback((note: number) => {
+    // Hold ligado: a nota fica "presa" (pedal de sustain) — o engine só
+    // recebe o noteOff quando o Hold for desligado.
+    if (holdRef.current) {
+      heldNotesRef.current.add(note);
+      return;
+    }
     engineRef.current?.noteOff(note);
     setActiveNotes((prev) => {
       const next = new Set(prev);
       next.delete(note);
+      return next;
+    });
+  }, []);
+
+  /** Liga/desliga o Hold; ao desligar, libera todas as notas presas. */
+  const toggleHold = useCallback(() => {
+    setHold((prev) => {
+      const next = !prev;
+      holdRef.current = next;
+      if (!next) {
+        const released = [...heldNotesRef.current];
+        heldNotesRef.current.clear();
+        for (const note of released) {
+          engineRef.current?.noteOff(note);
+        }
+        setActiveNotes((prevNotes) => {
+          const nextNotes = new Set(prevNotes);
+          for (const note of released) nextNotes.delete(note);
+          return nextNotes;
+        });
+      }
       return next;
     });
   }, []);
@@ -742,6 +786,12 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               <div><dt>Instrumento</dt><dd>{instrumentName || '—'}</dd></div>
               <div><dt>Raiz de referência</dt><dd>{loaded ? `${referenceRoot} (${noteName(referenceRoot)})` : '—'}</dd></div>
               <div><dt>Presets</dt><dd>{presets.length || '—'}</dd></div>
+              <div><dt>Data</dt><dd>{(() => {
+                const entry = recent.find((e) => e.path === path);
+                if (!entry) return '—';
+                const d = new Date(entry.addedAt);
+                return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+              })()}</dd></div>
               <div><dt>Integridade</dt><dd>{loaded ? 'OK' : '—'}</dd></div>
             </dl>
           </div>
@@ -893,26 +943,6 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 </div>
               </div>
 
-              {/* ---------- Faixa / raiz (steppers) ---------- */}
-              <div className="live-steppers">
-                {LIVE_STEPPERS.map((key) => {
-                  const def = LIVE_PARAM_DEFS[key];
-                  const value = params[key];
-                  const showNote = key === 'noteMin' || key === 'noteMax' || key === 'rootKey';
-                  return (
-                    <div key={key} className="live-stepper">
-                      <span className="live-stepper-label">{def.label}</span>
-                      <div className="live-stepper-row">
-                        <span className="live-stepper-value">{def.format(value)}</span>
-                        <button type="button" onClick={() => updateParam(key, value - def.step)} title="Diminuir">−</button>
-                        <button type="button" onClick={() => updateParam(key, value + def.step)} title="Aumentar">+</button>
-                      </div>
-                      {showNote && <span className="live-stepper-note">{noteName(value)}</span>}
-                    </div>
-                  );
-                })}
-              </div>
-
               {/* ---------- Linha principal de knobs (foto) ---------- */}
               <div className="live-knobs live-knobs-main">
                 {renderKnob('volumeDb')}
@@ -959,23 +989,28 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               {/* ---------- Abas de efeitos ---------- */}
               <div className="live-fx-tabs">
                 <button type="button" className={fxTab === 'efeitos' ? 'active' : ''} onClick={() => setFxTab('efeitos')}>Efeitos / Ao Vivo</button>
+                <button type="button" className={fxTab === 'camadas' ? 'active' : ''} onClick={() => setFxTab('camadas')}>Camadas</button>
+                <button type="button" className={fxTab === 'grupos' ? 'active' : ''} onClick={() => setFxTab('grupos')}>Grupos</button>
+                <button type="button" className={fxTab === 'samples' ? 'active' : ''} onClick={() => setFxTab('samples')}>Samples</button>
+                <button type="button" className={fxTab === 'mapeamento' ? 'active' : ''} onClick={() => setFxTab('mapeamento')}>Mapeamento</button>
                 <button type="button" className={fxTab === 'ferramentas' ? 'active' : ''} onClick={() => setFxTab('ferramentas')}>Ferramentas</button>
                 <button type="button" className={fxTab === 'novidades' ? 'active' : ''} onClick={() => setFxTab('novidades')}>Novidades</button>
                 <span className="live-fx-scope">INSTRUMENTO INTEIRO</span>
               </div>
 
-              {/* ---------- Módulos de efeito ---------- */}
+              {/* ---------- Módulos de efeito / painéis de informação ---------- */}
               <div className="live-fx-modules">
-                {FX_MODULES[fxTab].map((config) => (
-                  <EffectModule
-                    key={config.effect.id}
-                    config={config}
-                    params={params}
-                    bypassed={bypass[config.effect.id]}
-                    onParam={updateParam}
-                    onToggleBypass={() => toggleBypass(config.effect.id)}
-                  />
-                ))}
+                {(fxTab === 'efeitos' || fxTab === 'ferramentas' || fxTab === 'novidades') &&
+                  FX_MODULES[fxTab as FxTab].map((config) => (
+                    <EffectModule
+                      key={config.effect.id}
+                      config={config}
+                      params={params}
+                      bypassed={bypass[config.effect.id]}
+                      onParam={updateParam}
+                      onToggleBypass={() => toggleBypass(config.effect.id)}
+                    />
+                  ))}
                 {fxTab === 'novidades' && (
                   <div className="fx-module">
                     <div className="fx-module-head"><span className="fx-module-name">PRESSÃO</span></div>
@@ -983,6 +1018,44 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                       {renderKnob('pressure', 'lg')}
                     </div>
                     <p className="fx-module-note">Macro de palco: drive + presença + cola + largura + reverb.</p>
+                  </div>
+                )}
+                {(fxTab === 'camadas' || fxTab === 'grupos' || fxTab === 'samples' || fxTab === 'mapeamento') && (
+                  <div className="live-info-panel">
+                    <h4>{fxTab === 'camadas' ? 'Camadas do Instrumento' : fxTab === 'grupos' ? 'Grupos do Instrumento' : fxTab === 'samples' ? 'Samples do Instrumento' : 'Mapeamento'}</h4>
+                    {fxTab === 'mapeamento' && (
+                      <div className="live-steppers live-steppers-map">
+                        {LIVE_STEPPERS.map((key) => {
+                          const def = LIVE_PARAM_DEFS[key];
+                          const value = params[key];
+                          const showNote = key === 'noteMin' || key === 'noteMax' || key === 'rootKey';
+                          return (
+                            <div key={key} className="live-stepper">
+                              <span className="live-stepper-label">{def.label}</span>
+                              <div className="live-stepper-row">
+                                <span className="live-stepper-value">{def.format(value)}</span>
+                                <button type="button" onClick={() => updateParam(key, value - def.step)} title="Diminuir">−</button>
+                                <button type="button" onClick={() => updateParam(key, value + def.step)} title="Aumentar">+</button>
+                              </div>
+                              {showNote && <span className="live-stepper-note">{noteName(value)}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                    <dl className="live-info-dl">
+                      <div><dt>Instrumento</dt><dd>{instrumentName || '—'}</dd></div>
+                      <div><dt>Presets</dt><dd>{presets.length || '—'}</dd></div>
+                      <div><dt>Preset ativo</dt><dd>{presets.find((p) => p.value === selectedPreset)?.label ?? '—'}</dd></div>
+                      <div><dt>Raiz de referência</dt><dd>{referenceRoot} ({noteName(referenceRoot)})</dd></div>
+                      <div><dt>Faixa de notas</dt><dd>{noteName(params.noteMin)} — {noteName(params.noteMax)}</dd></div>
+                      <div><dt>Faixa de velocidade</dt><dd>{params.velMin} — {params.velMax}</dd></div>
+                    </dl>
+                    <p className="live-info-note">
+                      {fxTab === 'mapeamento'
+                        ? 'O mapeamento detalhado (zonas, camadas e samples) é editado no Estúdio de Instrumentos. Aqui você ajusta a faixa global de notas e velocidades que afeta todas as zonas.'
+                        : 'Estas informações vêm do instrumento convertido carregado. Os controles globais desta página afetam todas as camadas, grupos e samples ao mesmo tempo.'}
+                    </p>
                   </div>
                 )}
               </div>
