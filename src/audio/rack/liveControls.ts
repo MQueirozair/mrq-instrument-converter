@@ -93,6 +93,9 @@ export interface LiveParams {
   // --- Novidades inventadas (v0.2.23) ---
   pressure: number;
   ecoVivo: number;
+  limpaGraves: number;
+  clareza: number;
+  salaCurta: number;
   // --- Linha MIDI (v0.2.25) — canal, oitava, velocity padrão, modo ---
   midiChannel: number;
   octave: number;
@@ -201,6 +204,9 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   // --- Novidades inventadas (v0.2.23) ---
   pressure: { key: 'pressure', label: 'PRESSÃO', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
   ecoVivo: { key: 'ecoVivo', label: 'ECO VIVO', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
+  limpaGraves: { key: 'limpaGraves', label: 'LIMPA GRAVES', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
+  clareza: { key: 'clareza', label: 'CLAREZA', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
+  salaCurta: { key: 'salaCurta', label: 'SALA CURTA', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
   // --- Linha MIDI (v0.2.25) ---
   midiChannel: { key: 'midiChannel', label: 'CANAL MIDI', min: 1, max: 16, step: 1, format: (v) => String(Math.round(v)), default: 1 },
   octave: { key: 'octave', label: 'OITAVA', min: -2, max: 2, step: 1, format: (v) => String(Math.round(v)), default: 0 },
@@ -244,7 +250,7 @@ export const LIVE_KNOBS_TOOLS: LiveParamKey[] = [
 ];
 
 /** Knobs das 2 novidades inventadas (v0.2.23). */
-export const LIVE_KNOBS_NEW: LiveParamKey[] = ['pressure', 'ecoVivo'];
+export const LIVE_KNOBS_NEW: LiveParamKey[] = ['pressure', 'ecoVivo', 'limpaGraves', 'clareza', 'salaCurta'];
 
 /** Controles da linha MIDI (v0.2.25) — seletores/steppers, não knobs. */
 export const LIVE_MIDI_ROW: LiveParamKey[] = ['midiChannel', 'octave', 'defaultVelocity', 'playMode'];
@@ -601,7 +607,8 @@ export function ecoVivoFeedback(baseFeedbackPct: number, ecoVivoPct: number, den
 export type LiveEffectId =
   | 'eq' | 'drive' | 'chorus' | 'delay' | 'stereo' | 'reverb' | 'shimmer'
   | 'comp' | 'phaser' | 'flanger' | 'tremolo' | 'crush' | 'octaver' | 'gate'
-  | 'vibrato' | 'autopan' | 'exciter' | 'ring' | 'tape' | 'arp' | 'ecoVivo';
+  | 'vibrato' | 'autopan' | 'exciter' | 'ring' | 'tape' | 'arp' | 'ecoVivo'
+  | 'limpaGraves' | 'clareza' | 'salaCurta';
 
 /** Estado de bypass: `true` = efeito fora do caminho de áudio. */
 export type LiveBypass = Record<LiveEffectId, boolean>;
@@ -636,6 +643,9 @@ export const LIVE_EFFECTS: LiveEffectDef[] = [
   { id: 'tape', label: 'TAPE', paramKeys: ['tape'] },
   { id: 'arp', label: 'ARPEJADOR', paramKeys: ['arpRate', 'arpRange'] },
   { id: 'ecoVivo', label: 'ECO VIVO', paramKeys: ['ecoVivo'] },
+  { id: 'limpaGraves', label: 'LIMPA GRAVES', paramKeys: ['limpaGraves'] },
+  { id: 'clareza', label: 'CLAREZA', paramKeys: ['clareza'] },
+  { id: 'salaCurta', label: 'SALA CURTA', paramKeys: ['salaCurta'] },
 ];
 
 /** Mapa parâmetro → efeito (pra desabilitar os knobs do efeito em bypass). */
@@ -701,6 +711,9 @@ export function applyBypass(p: LiveParams, bypass: LiveBypass): LiveParams {
   if (bypass.tape) out.tape = 0;
   if (bypass.arp) out.arpRate = 0;
   if (bypass.ecoVivo) out.ecoVivo = 0;
+  if (bypass.limpaGraves) out.limpaGraves = 0;
+  if (bypass.clareza) out.clareza = 0;
+  if (bypass.salaCurta) out.salaCurta = 0;
   return out;
 }
 

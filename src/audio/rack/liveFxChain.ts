@@ -150,6 +150,11 @@ export class LiveFxChain {
   readonly output: GainNode;
 
   private ctx: AudioContext;
+  private cleanBass: BiquadFilterNode;
+  private clarityLow: BiquadFilterNode;
+  private clarityHigh: BiquadFilterNode;
+  private roomEarlyA: GainNode;
+  private roomEarlyB: GainNode;
   private eqLow: BiquadFilterNode;
   private eqMid: BiquadFilterNode;
   private eqHigh: BiquadFilterNode;
@@ -193,6 +198,19 @@ export class LiveFxChain {
 
     this.input = ctx.createGain();
     this.output = ctx.createGain();
+
+    // Novidades: filtros dedicados, independentes dos knobs de EQ.
+    this.cleanBass = ctx.createBiquadFilter();
+    this.cleanBass.type = 'lowshelf';
+    this.cleanBass.frequency.value = 100;
+    this.clarityLow = ctx.createBiquadFilter();
+    this.clarityLow.type = 'peaking';
+    this.clarityLow.frequency.value = 380;
+    this.clarityLow.Q.value = 0.8;
+    this.clarityHigh = ctx.createBiquadFilter();
+    this.clarityHigh.type = 'peaking';
+    this.clarityHigh.frequency.value = 2400;
+    this.clarityHigh.Q.value = 0.7;
 
     // --- EQ 3 bandas ---
     this.eqLow = ctx.createBiquadFilter();
@@ -291,6 +309,23 @@ export class LiveFxChain {
     this.masterPan.output.connect(this.limiter);
     this.limiter.connect(this.output);
 
+    // Sala curta: duas reflexões fixas sem feedback. Seus ganhos começam em
+    // zero, preservando o sinal seco, inclusive nos instrumentos antigos.
+    const earlyA = ctx.createDelay(0.1);
+    const earlyB = ctx.createDelay(0.1);
+    earlyA.delayTime.value = 0.029;
+    earlyB.delayTime.value = 0.053;
+    this.roomEarlyA = ctx.createGain();
+    this.roomEarlyB = ctx.createGain();
+    this.roomEarlyA.gain.value = 0;
+    this.roomEarlyB.gain.value = 0;
+    widthMerger.connect(earlyA);
+    widthMerger.connect(earlyB);
+    earlyA.connect(this.roomEarlyA);
+    earlyB.connect(this.roomEarlyB);
+    this.roomEarlyA.connect(this.masterGain);
+    this.roomEarlyB.connect(this.masterGain);
+
     // --- Reverb (envio paralelo a partir da saída estéreo da largura) ---
     // v0.2.24: o envio sai do widthMerger (estéreo) em vez do delayOut (que
     // pode ser mono com sample mono) — a cauda do reverb fica estéreo junto
@@ -317,7 +352,10 @@ export class LiveFxChain {
     this.shimmerWet.connect(reverbSend);
 
     // --- Liga a cadeia principal ---
-    this.input.connect(this.eqLow);
+    this.input.connect(this.cleanBass);
+    this.cleanBass.connect(this.clarityLow);
+    this.clarityLow.connect(this.clarityHigh);
+    this.clarityHigh.connect(this.eqLow);
     this.eqLow.connect(this.eqMid);
     this.eqMid.connect(this.eqHigh);
     this.eqHigh.connect(drivePre);
@@ -341,6 +379,13 @@ export class LiveFxChain {
     this.lastParams = p;
     const now = this.ctx.currentTime;
     const t = (param: AudioParam, value: number) => param.setTargetAtTime(value, now, SMOOTH);
+
+    // Três controles independentes: sem sobrescrever EQ ou reverb do usuário.
+    t(this.cleanBass.gain, -12 * p.limpaGraves / 100);
+    t(this.clarityLow.gain, -5 * p.clareza / 100);
+    t(this.clarityHigh.gain, 3 * p.clareza / 100);
+    t(this.roomEarlyA.gain, 0.18 * p.salaCurta / 100);
+    t(this.roomEarlyB.gain, 0.12 * p.salaCurta / 100);
 
     // EQ
     t(this.eqLow.gain, p.eqLowDb);

@@ -15,6 +15,8 @@ export interface EffectModuleConfig {
   effect: LiveEffectDef;
   /** Título exibido no módulo (padrão: effect.label) — v0.2.30. */
   title?: string;
+  /** Descrição curta e objetiva do processamento. */
+  description?: string;
   /** Knob principal (mix/quantidade). */
   main: LiveParamKey;
   /** Parâmetro do slider vertical (opcional). */
@@ -84,7 +86,7 @@ const SHORT_EXTRA_LABELS: Partial<Record<LiveParamKey, string>> = {
 };
 
 export default function EffectModule({ config, params, bypassed, onParam, onToggleBypass, compact }: EffectModuleProps) {
-  const { effect, title, main, slider, sliderLabel, graph, extras } = config;
+  const { effect, title, main, slider, sliderLabel, graph, extras, description } = config;
   const mainDef = LIVE_PARAM_DEFS[main];
   const sliderDef = slider ? LIVE_PARAM_DEFS[slider] : null;
 
@@ -112,7 +114,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
   };
 
   return (
-    <div className={`fx-module${bypassed ? ' bypassed' : ''}${compact ? ' compact' : ''}`}>
+    <div title={description} className={`fx-module${bypassed ? ' bypassed' : ''}${compact ? ' compact' : ''}`}>
       <div className="fx-module-head">
         <span className="fx-module-name">{title ?? effect.label}</span>
         <button
@@ -159,6 +161,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
             extra) pra não aumentar a altura do módulo. */}
         {compact && extras && extras.length > 0 && extras.map(renderExtra)}
       </div>
+      {description && <p className="fx-module-note">{description}</p>}
       {!compact && extras && extras.length > 0 && (
         <div className="fx-module-extras">
           {extras.map(renderExtra)}

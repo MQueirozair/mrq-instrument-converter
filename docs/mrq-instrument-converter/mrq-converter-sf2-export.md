@@ -653,3 +653,10 @@ Testes: compatibilidade da curva antiga em todas as velocities, interpolação,
 calibração, polaridade, persistência e limites; simulação do motor com vozes
 e relógio fake; testes de UI com MIDI simulado, arraste, desfazer e sete abas
 em 1150/1280/1366/1600/1920 × 720. Hardware físico não foi testado.
+
+## 29. Três ferramentas na aba Novidades (v0.2.38)
+
+- **Limpa Graves:** low shelf em 100 Hz, até −12 dB. Atenua, não elimina frequências e não é filtro passa-altas.
+- **Clareza:** peaking em 380 Hz (até −5 dB) mais 2,4 kHz (até +3 dB); filtros próprios independentes do EQ.
+- **Sala Curta:** duas cópias atrasadas em 29 e 53 ms, sem feedback, retorno paralelo ao caminho de Ferramentas, antes do volume, pan e limitador master. Não é reverb por convolução nem modelagem física; pode alterar nível e resposta em frequência, inclusive em mono.
+- Começam em 0%, inclusive em instrumentos antigos. Bypass independente mantém o ajuste, salvo por caminho de instrumento no armazenamento local; não é gravado no arquivo de instrumento exportado. Controle com undo/redo igual aos demais. Todos atuam na pré-escuta de Controles ao Vivo, não no processamento do arquivo exportado.

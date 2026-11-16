@@ -100,9 +100,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('78 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('81 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 78);
+  assert.equal(keys.length, 81);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);
@@ -110,15 +110,15 @@ test('78 controles definidos, todos com min < max e padrão dentro da faixa', ()
   }
 });
 
-test('ordem das linhas: 5 steppers + 12 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 62 (+panMode)', () => {
+test('ordem das linhas: 5 steppers + 12 + 12 + 27 ferramentas + 5 novidades + 4 linha MIDI = 65 (+panMode)', () => {
   assert.equal(LIVE_STEPPERS.length, 5);
   assert.equal(LIVE_KNOBS_ROW1.length, 12);
   assert.equal(LIVE_KNOBS_FX.length, 12);
   assert.equal(LIVE_KNOBS_TOOLS.length, 27);
-  assert.equal(LIVE_KNOBS_NEW.length, 2);
+  assert.equal(LIVE_KNOBS_NEW.length, 5);
   assert.equal(LIVE_MIDI_ROW.length, 4);
   const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW, ...LIVE_MIDI_ROW];
-  assert.equal(new Set(all).size, 62);
+  assert.equal(new Set(all).size, 65);
   // panMode é parâmetro (persistido) mas não é knob de nenhuma linha.
   assert.ok('panMode' in LIVE_PARAM_DEFS);
   assert.ok(!all.includes('panMode'));
@@ -358,9 +358,9 @@ test('ecoVivoFeedback: densidade alta fecha o feedback; ecoVivo 0 = base', () =>
 });
 
 // --- Bypass dos efeitos (v0.2.24) ---
-test('defaultLiveBypass: 21 efeitos, nenhum desligado', () => {
+test('defaultLiveBypass: 24 efeitos, nenhum desligado', () => {
   const b = defaultLiveBypass();
-  assert.equal(LIVE_EFFECTS.length, 21);
+  assert.equal(LIVE_EFFECTS.length, 24);
   for (const fx of LIVE_EFFECTS) assert.equal(b[fx.id], false, `${fx.id} ligado por padrão`);
 });
 
@@ -770,6 +770,31 @@ test('AHDSR 12: holdMs/decayMs persistem por instrumento (salvar/reabrir)', () =
   assert.equal(clampLiveParams({ holdMs: 99999 }).holdMs, 5000);
   assert.equal(clampLiveParams({ holdMs: -5 }).holdMs, 0);
   assert.equal(clampLiveParams({ decayMs: 99999 }).decayMs, 5000);
+});
+
+
+
+// v0.2.38: defaults antigos, isolamento, bypass e persistência.
+test('três novidades: defaults neutros, bypass e restauração por instrumento', () => {
+  const keys = ['limpaGraves', 'clareza', 'salaCurta'];
+  const old = clampLiveParams({ volumeDb: -3 });
+  for (const key of keys) {
+    assert.equal(old[key], 0);
+    assert.equal(effectIdForParam(key), key);
+    const p = { ...old, [key]: 73 };
+    const b = { ...defaultLiveBypass(), [key]: true };
+    assert.equal(applyBypass(p, b)[key], 0);
+    assert.equal(p[key], 73);
+    assert.equal(applyBypass(p, defaultLiveBypass())[key], 73);
+  }
+  const p = { ...old, limpaGraves: 23, clareza: 45, salaCurta: 67 };
+  saveLiveParams('/v038.mrq', p);
+  assert.equal(loadLiveParams('/v038.mrq').salaCurta, 67);
+  assert.equal(loadLiveParams('/outro.mrq').salaCurta, 0);
+  saveLiveBypass('/v038.mrq', { ...defaultLiveBypass(), clareza: true });
+  assert.equal(loadLiveBypass('/v038.mrq').clareza, true);
+  assert.equal(loadLiveBypass('/outro.mrq').clareza, false);
+  clearLiveParams('/v038.mrq'); clearLiveBypass('/v038.mrq');
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);

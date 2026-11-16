@@ -131,6 +131,11 @@ const FX_MODULES: Record<string, EffectModuleConfig[]> = {
   novidades: [
     { effect: LIVE_EFFECTS.find((e) => e.id === 'ecoVivo')!, main: 'ecoVivo' },
   ],
+  novidadesExtra: [
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'limpaGraves')!, main: 'limpaGraves', description: 'Atenua graves abaixo de 100 Hz.' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'clareza')!, main: 'clareza', description: 'Reduz médios abafados e realça presença.' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'salaCurta')!, main: 'salaCurta', description: 'Adiciona duas reflexões curtas, sem feedback.' },
+  ],
   // v0.2.30: abas de informação (sem módulos de efeito — mostram metadados).
   camadas: [],
   grupos: [],
@@ -1093,7 +1098,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               </div>
 
               {/* ---------- Módulos de efeito / painéis de informação ---------- */}
-              <div className={`live-fx-modules${fxTab === 'ferramentas' ? ' tools-grid' : ''}`}>
+              <div className={`live-fx-modules${fxTab === 'ferramentas' ? ' tools-grid' : fxTab === 'novidades' ? ' new-grid' : ''}`}>
                 {(fxTab === 'efeitos' || fxTab === 'ferramentas' || fxTab === 'novidades') &&
                   FX_MODULES[fxTab as FxTab].map((config) => (
                     <EffectModule
@@ -1115,6 +1120,11 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                     <p className="fx-module-note">Macro de palco: drive + presença + cola + largura + reverb.</p>
                   </div>
                 )}
+                {fxTab === 'novidades' && FX_MODULES.novidadesExtra.map((config) => (
+                  <EffectModule key={config.effect.id} config={config} params={params}
+                    bypassed={bypass[config.effect.id]} onParam={updateParam}
+                    onToggleBypass={() => toggleBypass(config.effect.id)} />
+                ))}
                 {(fxTab === 'camadas' || fxTab === 'grupos' || fxTab === 'samples' || fxTab === 'mapeamento') && (
                   <div className="live-info-panel">
                     <h4>{fxTab === 'camadas' ? 'Camadas do Instrumento' : fxTab === 'grupos' ? 'Grupos do Instrumento' : fxTab === 'samples' ? 'Samples do Instrumento' : 'Mapeamento'}</h4>
