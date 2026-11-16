@@ -100,9 +100,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('63 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('78 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 63);
+  assert.equal(keys.length, 78);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);

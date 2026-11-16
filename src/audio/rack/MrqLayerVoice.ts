@@ -288,8 +288,9 @@ export class MrqLayerVoice {
     if (voices.length > 0) this.active.set(note, voices);
   }
 
-  noteOff(note: number) {
-    this.stopNote(note, RELEASE_SEC);
+  noteOff(note: number, releaseScale = 1) {
+    const scale = Number.isFinite(releaseScale) ? Math.max(0, Math.min(1, releaseScale)) : 1;
+    this.stopNote(note, Math.max(0.0005, RELEASE_SEC * scale));
   }
 
   setPitchBend(semitones: number) {

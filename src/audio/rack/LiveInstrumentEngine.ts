@@ -27,7 +27,9 @@ import { MrqLayerVoice } from './MrqLayerVoice';
 import { LiveFxChain } from './liveFxChain';
 import {
   applyBypass,
-  applyVelocityCurve,
+  mapLiveVelocity,
+  noteOffReleaseFactor,
+  mapPedalValue,
   arpNoteOffsets,
   clampLiveParams,
   defaultLiveBypass,
@@ -150,7 +152,7 @@ export class LiveInstrumentEngine {
       this.allNotesOff();
     }
     // Curva de velocity (VELOCIDADE CURVA) antes do disparo.
-    const shaped = applyVelocityCurve(vel, this.params.velCurve);
+    const shaped = mapLiveVelocity(vel, this.params);
     // Re-toque durante o release desta mesma nota: cancela o noteOff
     // pendente pra ele não matar a voz nova.
     const pending = this.pendingRelease.get(transposed);
@@ -167,38 +169,35 @@ export class LiveInstrumentEngine {
     this.startArp();
   }
 
-  noteOff(note: number) {
+  /** Note-off 0x80 pode transportar velocidade; 0x90/0 usa o padrão 64. */
+  noteOff(note: number, releaseVelocity = 64) {
     if (this.disposed) return;
     const original = Math.round(note);
     const held = this.heldNotes.get(original);
     if (!held) return;
     this.heldNotes.delete(original);
     const transposed = held.transposed;
-    if (this.heldNotes.size === 0 && !this.sustainPedalDown) {
-      this.triggerRelease();
+    const factor = noteOffReleaseFactor(releaseVelocity, this.params);
+    const releaseMs = Math.max(0, this.params.releaseMs * factor);
+    if (this.sustainPedalDown) {
+      // Todas as notas soltas sob o pedal são mantidas, não apenas a última.
+      this.pedalHeldVoices.set(transposed, { factor, releaseMs });
+    } else if (this.heldNotes.size === 0) {
+      this.triggerRelease(releaseMs);
       this.stopArp();
-      this.scheduleVoiceOff(transposed);
-    } else if (this.heldNotes.size === 0 && this.sustainPedalDown) {
-      // Pedal CC64 pressionado: a voz continua soando (sustain) — ela só
-      // é liberada quando o pedal for solto (ver setSustainPedal). Não
-      // chama voice.noteOff agora nem fecha o gate.
-      this.pedalHeldVoices.add(transposed);
+      this.scheduleVoiceOff(transposed, releaseMs);
     } else {
-      this.voice.noteOff(transposed);
+      this.voice.noteOff(transposed, factor);
     }
     this.refreshDensity();
   }
 
-  /** Adia o noteOff da voz até o gate terminar de fechar (release). */
-  private scheduleVoiceOff(transposed: number) {
-    // A voz continua soando durante o release do gate — sem isso, o
-    // release longo (ex.: 554ms) seria cortado pelo release curto (~120ms)
-    // da própria voz.
-    const releaseMs = Math.max(0, this.params.releaseMs);
+  /** Mantém a amostra durante o release do gate global. */
+  private scheduleVoiceOff(transposed: number, releaseMs = this.params.releaseMs) {
     const id = setTimeout(() => {
       this.pendingRelease.delete(transposed);
       this.voice.noteOff(transposed);
-    }, releaseMs);
+    }, Math.max(0, releaseMs));
     this.pendingRelease.set(transposed, id);
   }
 
@@ -283,7 +282,7 @@ export class LiveInstrumentEngine {
   /** Pedal de sustain MIDI (CC64) — enquanto down, o gate não fecha. */
   private sustainPedalDown = false;
   /** Vozes (transpostas) soltas da tecla mas seguradas pelo pedal CC64. */
-  private pedalHeldVoices = new Set<number>();
+  private pedalHeldVoices = new Map<number, { factor: number; releaseMs: number }>();
 
   private triggerAttack() {
     const now = this.ctx.currentTime;
@@ -306,9 +305,9 @@ export class LiveInstrumentEngine {
     // SUSTAIN: o valor final permanece (nenhum ramp posterior).
   }
 
-  private triggerRelease() {
+  private triggerRelease(releaseMs = this.params.releaseMs) {
     const now = this.ctx.currentTime;
-    const releaseSec = Math.max(0.0005, this.params.releaseMs / 1000);
+    const releaseSec = Math.max(0.0005, releaseMs / 1000);
     const g = this.gate.gain;
     g.cancelScheduledValues(now);
     // Parte do nível atual (pode estar em Attack/Hold/Decay/Sustain) — sem
@@ -326,22 +325,30 @@ export class LiveInstrumentEngine {
     if (this.disposed) return;
     const was = this.sustainPedalDown;
     this.sustainPedalDown = down;
-    if (was && !down && this.heldNotes.size === 0) {
-      // Pedal liberado sem teclas: fecha o gate e libera as vozes que
-      // estavam sendo sustentadas pelo pedal.
-      this.triggerRelease();
-      this.stopArp();
-      for (const transposed of this.pedalHeldVoices) {
-        this.scheduleVoiceOff(transposed);
+    if (was && !down) {
+      const lastRelease = [...this.pedalHeldVoices.values()].reduce((max, v) => Math.max(max, v.releaseMs), 0);
+      if (this.heldNotes.size === 0) {
+        this.triggerRelease(this.pedalHeldVoices.size ? lastRelease : this.params.releaseMs);
+        this.stopArp();
+      }
+      for (const [transposed, release] of this.pedalHeldVoices) {
+        if (this.heldNotes.size === 0) this.scheduleVoiceOff(transposed, lastRelease);
+        else this.voice.noteOff(transposed, release.factor);
       }
       this.pedalHeldVoices.clear();
     }
+  }
+
+  /** CC64 é um interruptor neste motor; a curva determina o limiar efetivo. */
+  setSustainPedalValue(value: number) {
+    this.setSustainPedal(mapPedalValue(value, this.params) >= this.params.pedalThreshold);
   }
 
   allNotesOff() {
     for (const id of this.pendingRelease.values()) clearTimeout(id);
     this.pendingRelease.clear();
     this.heldNotes.clear();
+    this.pedalHeldVoices.clear();
     this.stopArp();
     const now = this.ctx.currentTime;
     const g = this.gate.gain;

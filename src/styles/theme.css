@@ -2527,3 +2527,34 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .live-curve-dialog-graph .expanded { width: 180px; }
 .live-curve-dialog-graph .expanded svg { width: 180px; height: 100px; }
 .live-curve-dialog-graph .live-curve-label { font-size: 10px; }
+
+/* Editor de curvas MIDI: área independente, sem aumentar a página principal. */
+.midi-curve-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: #02060cd9; }
+.midi-curve-dialog { width: min(780px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; background: linear-gradient(150deg, #111d2e, #0b1421); border: 1px solid #31577a; border-radius: 14px; color: var(--mrq-text); padding: 18px 20px; box-shadow: 0 18px 70px #000c, 0 0 25px #2474c033; }
+.midi-curve-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.midi-curve-head h2 { margin: 3px 0 0; font-size: 19px; }
+.midi-curve-eyebrow { color: #6adbf7; font-size: 9px; font-weight: 800; letter-spacing: .12em; }
+.midi-curve-tabs { display: flex; gap: 7px; margin: 14px 0; border-bottom: 1px solid var(--mrq-border); }
+.midi-curve-tabs button { border: 1px solid #293d56; border-radius: 7px 7px 0 0; padding: 7px 14px; color: #a4b6cf; background: #111b2b; font-size: 12px; cursor: pointer; }
+.midi-curve-tabs button.active { border-color: #218cff; background: #163764; color: #fff; }
+.midi-curve-content { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(220px, 1fr); gap: 20px; }
+.midi-curve-chart { border: 1px solid #29405b; background: #09111c; border-radius: 10px; padding: 10px; align-self: start; }
+.midi-curve-chart svg { display: block; width: 100%; height: auto; aspect-ratio: 350 / 180; touch-action: none; }
+.midi-curve-axis { font-size: 10px; color: #8ca2bf; text-align: center; }
+.midi-curve-options h3, .midi-calibration h3 { font-size: 15px; margin: 0 0 6px; }
+.midi-curve-options p, .midi-calibration p { color: #b1c1d4; font-size: 12px; line-height: 1.45; margin: 5px 0 10px; }
+.midi-curve-options label { color: #d6e5f5; font-size: 11px; }
+.midi-curve-range { display: flex; flex-direction: column; gap: 3px; margin-bottom: 7px; }
+.midi-curve-range span { display: flex; justify-content: space-between; }
+.midi-curve-range input { width: 100%; accent-color: #39baff; margin: 0; }
+.midi-curve-readout { padding: 7px; background: #16263a; border-radius: 6px; color: #a9c5de; font-size: 10px; margin-top: 8px; }
+.midi-curve-footer { display: flex; justify-content: space-between; gap: 10px; margin-top: 14px; }
+.midi-calibration { background: #0c1726; border: 1px solid #263d55; border-radius: 10px; padding: 14px; }
+.midi-calibration h4 { color: #7bdbff; font-size: 13px; margin: 12px 0 5px; }
+.midi-calibration-status { display: flex; align-items: center; gap: 10px; color: #7ce4ba; font-size: 12px; }
+.midi-calibration-cancel { border-top: 1px solid #263d55; margin-top: 14px; padding-top: 10px; }
+@media (max-width: 650px) { .midi-curve-content { grid-template-columns: 1fr; } .midi-curve-dialog { padding: 12px; } }
+
+.midi-curve-presets { display: flex; gap: 5px; flex-wrap: wrap; margin: 7px 0 10px; }
+.midi-curve-presets button { border: 1px solid #31577a; background: #162a40; color: #c7eaff; padding: 4px 6px; border-radius: 5px; font-size: 10px; cursor: pointer; }
+.midi-curve-presets button:hover { border-color: var(--mrq-cyan); }

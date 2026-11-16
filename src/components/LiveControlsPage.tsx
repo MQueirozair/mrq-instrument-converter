@@ -33,7 +33,8 @@ import {
   LIVE_PARAM_DEFS,
   LIVE_STEPPERS,
   ahdsrCurvePoints,
-  applyVelocityCurve,
+  mapLiveVelocity,
+  clampLiveParams,
   clearLiveBypass,
   clearLiveParams,
   defaultLiveBypass,
@@ -58,6 +59,7 @@ import { loadConvertedInstruments } from '../audio/rack/convertedInstruments';
 import { useStore } from '../state/useStore';
 import Knob from './Knob';
 import EffectModule, { type EffectModuleConfig } from './EffectModule';
+import MidiCurveEditor, { type MidiSample } from './MidiCurveEditor';
 import PlayableKeyboard from './PlayableKeyboard';
 
 export interface LiveControlsPageProps {
@@ -150,6 +152,11 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const [bypass, setBypass] = useState<LiveBypass>(() => defaultLiveBypass());
   const [fxTab, setFxTab] = useState<FxTab>('efeitos');
   const [curveEditor, setCurveEditor] = useState<'envelope' | 'velocity' | null>(null);
+  const [midiSample, setMidiSample] = useState<MidiSample | null>(null);
+  const curveEditorRef = useRef(curveEditor);
+  curveEditorRef.current = curveEditor;
+  const midiSerialRef = useRef(0);
+  const lastPedalValueRef = useRef<number | null>(null);
   const [activeNotes, setActiveNotes] = useState<ReadonlySet<number>>(new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [midiConnected, setMidiConnected] = useState(false);
@@ -278,6 +285,9 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       try {
         const engine = ensureEngine();
         resumeAudio();
+        engine.allNotesOff();
+        engine.setSustainPedal(false);
+        lastPedalValueRef.current = null;
         const result = await engine.load(filePath);
         setPath(filePath);
         setInstrumentName(result.instrumentName);
@@ -325,6 +335,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         midiAccessRef.current.inputs.forEach((input) => {
           input.onmidimessage = null;
         });
+        midiAccessRef.current.onstatechange = null;
       }
       engineRef.current?.dispose();
       engineRef.current = null;
@@ -359,6 +370,11 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       paramsRef.current = next;
       setParams(next);
       engineRef.current?.setParams(next);
+      // Reavalia o CC64 mais recente se a curva/limiar mudou enquanto o
+      // pedal estava pressionado; não espera um novo evento do hardware.
+      const pedalKeys: LiveParamKey[] = ['pedalLow', 'pedalMid', 'pedalHigh', 'pedalInputLow', 'pedalInputHigh', 'pedalReverse', 'pedalThreshold'];
+      if (lastPedalValueRef.current !== null && pedalKeys.some((key) => prev[key] !== next[key]))
+        engineRef.current?.setSustainPedalValue(lastPedalValueRef.current);
       const p = pathRef.current;
       if (p) {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
@@ -507,6 +523,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     setParams(next);
     setBypass(nextBypass);
     engineRef.current?.setParams(next);
+    if (lastPedalValueRef.current !== null) engineRef.current?.setSustainPedalValue(lastPedalValueRef.current);
     engineRef.current?.setBypass(nextBypass);
     if (pathRef.current) {
       clearLiveParams(pathRef.current);
@@ -531,14 +548,14 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     [resumeAudio]
   );
 
-  const noteOff = useCallback((note: number) => {
+  const noteOff = useCallback((note: number, releaseVelocity = 64) => {
     // Hold ligado: a nota fica "presa" (pedal de sustain) — o engine só
     // recebe o noteOff quando o Hold for desligado.
     if (holdRef.current) {
       heldNotesRef.current.add(note);
       return;
     }
-    engineRef.current?.noteOff(note);
+    engineRef.current?.noteOff(note, releaseVelocity);
     setActiveNotes((prev) => {
       const next = new Set(prev);
       next.delete(note);
@@ -647,8 +664,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         setMidiDevices(names);
         setMidiConnected(names.length > 0);
       };
-      refresh();
-      access.inputs.forEach((input) => {
+      const attachInputs = () => access.inputs.forEach((input) => {
         input.onmidimessage = (ev: MIDIMessageEvent) => {
           const data = ev.data;
           if (!data || data.length < 2) return;
@@ -658,13 +674,18 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           const command = data[0] & 0xf0;
           const number = data[1];
           const value = data[2] ?? 0;
+          if (curveEditorRef.current === 'velocity' && ((command === 0x90 && value > 0) || (command === 0xb0 && number === 64))) {
+            setMidiSample({ serial: ++midiSerialRef.current, command, number, value });
+          }
           if (command === 0x90 && value > 0) noteOn(number, value);
-          else if (command === 0x80 || (command === 0x90 && value === 0)) noteOff(number);
-          // v0.2.31: pedal de sustain (CC64) — segura as notas até liberar.
-          else if (command === 0xb0 && number === 64) engineRef.current?.setSustainPedal(value >= 64);
+          else if (command === 0x80) noteOff(number, data.length >= 3 ? value : 64);
+          else if (command === 0x90 && value === 0) noteOff(number, 64);
+          else if (command === 0xb0 && number === 64) { lastPedalValueRef.current = value; engineRef.current?.setSustainPedalValue(value); }
         };
       });
-      access.onstatechange = refresh;
+      attachInputs();
+      refresh();
+      access.onstatechange = () => { attachInputs(); refresh(); };
       if (access.inputs.size === 0) {
         pushToast('Nenhum teclado MIDI USB encontrado. Conecte o teclado e clique de novo.', 'error');
       } else {
@@ -749,11 +770,10 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
 
   /** Gráfico da curva de velocity (SVG) — espelha applyVelocityCurve. */
   function renderVelocityCurve(expanded = false) {
-    const curve = params.velCurve;
     const pts: string[] = [];
     for (let i = 0; i <= 24; i++) {
       const v = 1 + (i / 24) * 126;
-      const shaped = applyVelocityCurve(v, curve);
+      const shaped = mapLiveVelocity(v, params);
       const x = 4 + (i / 24) * 92;
       const y = 44 - ((shaped - 1) / 126) * 40;
       pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
@@ -1180,28 +1200,31 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         </div>
       </div>
 
-      {curveEditor && (
+      {curveEditor === 'velocity' && <MidiCurveEditor
+        params={params} sample={midiSample} connected={midiConnected}
+        onConnect={() => void connectMidi()} onClose={() => setCurveEditor(null)}
+        onChange={(values) => applyParams(clampLiveParams({ ...paramsRef.current, ...values }), true)}
+      />}
+
+      {curveEditor === 'envelope' && (
         <div className="live-curve-overlay" onClick={() => setCurveEditor(null)}>
           <section className="live-curve-dialog" role="dialog" aria-modal="true"
             aria-labelledby="live-curve-dialog-title" onClick={(event) => event.stopPropagation()}
             onKeyDown={(event) => { if (event.key === 'Escape') setCurveEditor(null); }}>
             <div className="live-curve-dialog-head">
-              <h2 id="live-curve-dialog-title">{curveEditor === 'envelope' ? 'Ajustar envelope AHDSR' : 'Ajustar curva de velocidade'}</h2>
+              <h2 id="live-curve-dialog-title">Ajustar envelope AHDSR</h2>
               <button type="button" className="btn ghost small" onClick={() => setCurveEditor(null)} autoFocus>Fechar</button>
             </div>
-            <p>{curveEditor === 'envelope' ? 'Controle cada estágio do envelope. Os ajustes também aparecem na linha principal.' : 'Ajuste como a força da tecla afeta a velocidade. Zero é linear.'}</p>
-            <div className="live-curve-dialog-graph">{curveEditor === 'envelope' ? renderAhdsrGraph(true) : renderVelocityCurve(true)}</div>
+            <p>Controle cada estágio do envelope. Os ajustes também aparecem na linha principal.</p>
+            <div className="live-curve-dialog-graph">{renderAhdsrGraph(true)}</div>
             <div className="live-curve-dialog-controls">
-              {curveEditor === 'envelope' ? <>
+              <>
                 {renderKnob('attackMs', 'md', false, 'ATAQUE')}
                 {renderKnob('holdMs', 'md', false, 'HOLD')}
                 {renderKnob('decayMs', 'md', false, 'DECAY')}
                 {renderKnob('sustain', 'md', false, 'SUSTAIN')}
                 {renderKnob('releaseMs', 'md', false, 'RELEASE')}
-              </> : <>
-                {renderKnob('velCurve', 'md', false, 'CURVA')}
-                <span className="live-curve-description">{params.velCurve > 0 ? `+${params.velCurve}` : params.velCurve} · {params.velCurve === 0 ? 'Linear' : params.velCurve > 0 ? 'Expande' : 'Equaliza'}</span>
-              </>}
+              </>
             </div>
             <p>Arraste o controle, use as setas ou clique no valor para digitar. Duplo clique restaura o padrão.</p>
           </section>

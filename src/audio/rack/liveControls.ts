@@ -75,6 +75,21 @@ export interface LiveParams {
   arpRate: number;
   arpRange: number;
   velCurve: number;
+  velocityInputLow: number;
+  velocityInputHigh: number;
+  velocityLow: number;
+  velocityMid: number;
+  velocityHigh: number;
+  noteOffLow: number;
+  noteOffMid: number;
+  noteOffHigh: number;
+  pedalInputLow: number;
+  pedalInputHigh: number;
+  pedalLow: number;
+  pedalMid: number;
+  pedalHigh: number;
+  pedalReverse: number;
+  pedalThreshold: number;
   // --- Novidades inventadas (v0.2.23) ---
   pressure: number;
   ecoVivo: number;
@@ -168,6 +183,21 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   arpRate: { key: 'arpRate', label: 'ARP TAXA ms', min: 0, max: 1000, step: 10, format: f1, unit: 'ms', default: 0 },
   arpRange: { key: 'arpRange', label: 'ARP ALCANCE', min: 0, max: 24, step: 1, format: (v) => String(Math.round(v)), unit: 'st', default: 12 },
   velCurve: { key: 'velCurve', label: 'VELOCIDADE CURVA', min: -100, max: 100, step: 1, format: f1, default: 0 },
+  velocityInputLow: { key: 'velocityInputLow', label: 'VELOCIDADE ENTRADA MÍN', min: 1, max: 126, step: 1, format: (v) => String(Math.round(v)), default: 1 },
+  velocityInputHigh: { key: 'velocityInputHigh', label: 'VELOCIDADE ENTRADA MÁX', min: 2, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  velocityLow: { key: 'velocityLow', label: 'VELOCIDADE INÍCIO', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 0 },
+  velocityHigh: { key: 'velocityHigh', label: 'VELOCIDADE FINAL', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  velocityMid: { key: 'velocityMid', label: 'VELOCIDADE PONTO CENTRAL', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 64 },
+  noteOffLow: { key: 'noteOffLow', label: 'NOTE-OFF INÍCIO', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  noteOffMid: { key: 'noteOffMid', label: 'NOTE-OFF CENTRO', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  noteOffHigh: { key: 'noteOffHigh', label: 'NOTE-OFF FINAL', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  pedalInputLow: { key: 'pedalInputLow', label: 'PEDAL ENTRADA MÍN', min: 0, max: 126, step: 1, format: (v) => String(Math.round(v)), default: 0 },
+  pedalInputHigh: { key: 'pedalInputHigh', label: 'PEDAL ENTRADA MÁX', min: 1, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  pedalLow: { key: 'pedalLow', label: 'PEDAL INÍCIO', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 0 },
+  pedalHigh: { key: 'pedalHigh', label: 'PEDAL FINAL', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 127 },
+  pedalMid: { key: 'pedalMid', label: 'PEDAL PONTO CENTRAL', min: 0, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 64 },
+  pedalReverse: { key: 'pedalReverse', label: 'PEDAL INVERTIDO', min: 0, max: 1, step: 1, format: (v) => String(Math.round(v)), default: 0 },
+  pedalThreshold: { key: 'pedalThreshold', label: 'PEDAL LIMIAR', min: 1, max: 127, step: 1, format: (v) => String(Math.round(v)), default: 64 },
   // --- Novidades inventadas (v0.2.23) ---
   pressure: { key: 'pressure', label: 'PRESSÃO', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
   ecoVivo: { key: 'ecoVivo', label: 'ECO VIVO', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
@@ -235,6 +265,9 @@ export function clampLiveParams(input: Partial<LiveParams>): LiveParams {
     const value = typeof raw === 'number' && Number.isFinite(raw) ? raw : def.default;
     out[key] = Math.min(def.max, Math.max(def.min, value));
   }
+  // Evita divisão por zero nas faixas calibradas.
+  if (out.velocityInputHigh <= out.velocityInputLow) out.velocityInputHigh = Math.min(127, out.velocityInputLow + 1);
+  if (out.pedalInputHigh <= out.pedalInputLow) out.pedalInputHigh = Math.min(127, out.pedalInputLow + 1);
   // Faixas sempre ordenadas (min <= max) — evita faixa vazia por acidente.
   if (out.noteMin > out.noteMax) [out.noteMin, out.noteMax] = [out.noteMax, out.noteMin];
   if (out.velMin > out.velMax) [out.velMin, out.velMax] = [out.velMax, out.velMin];
@@ -468,6 +501,38 @@ export function applyVelocityCurve(velocity: number, curve: number): number {
   const v = Math.min(127, Math.max(1, velocity)) / 127;
   const gamma = Math.min(3, Math.max(0.3, 1 + curve / 50));
   return Math.min(127, Math.max(1, Math.round(127 * Math.pow(v, gamma))));
+}
+
+/** Curva linear por trechos; valores MIDI sanitizados em 0..127. */
+export function midiCurve3(input: number, low: number, mid: number, high: number): number {
+  const safe = (v: number) => Number.isFinite(v) ? Math.max(0, Math.min(127, v)) : 0;
+  const x = safe(input); const a = safe(low); const b = safe(mid); const c = safe(high);
+  return Math.round(x <= 64 ? a + (b - a) * x / 64 : b + (c - b) * (x - 64) / 63);
+}
+
+export function calibratedMidiInput(input: number, low: number, high: number): number {
+  const x = Number.isFinite(input) ? input : 0;
+  if (!Number.isFinite(low) || !Number.isFinite(high) || high <= low) return Math.max(0, Math.min(127, Math.round(x)));
+  return Math.max(0, Math.min(127, Math.round((x - low) * 127 / (high - low))));
+}
+
+/** Velocity existente continua aplicada depois do ponto central calibrável. */
+export function mapLiveVelocity(input: number, p: LiveParams): number {
+  const value = Number.isFinite(input) ? input : 1;
+  const x = Math.max(1, Math.min(127, 1 + Math.round((value - p.velocityInputLow) * 126 / Math.max(1, p.velocityInputHigh - p.velocityInputLow))));
+  return applyVelocityCurve(Math.max(1, midiCurve3(x, p.velocityLow, p.velocityMid, p.velocityHigh)), p.velCurve);
+}
+
+/** Curva de note-off controla duração do release (127 = duração original). */
+export function noteOffReleaseFactor(input: number, p: LiveParams): number {
+  return midiCurve3(input, p.noteOffLow, p.noteOffMid, p.noteOffHigh) / 127;
+}
+
+/** Valor CC64 calibrado e invertido, antes do limiar liga/desliga. */
+export function mapPedalValue(input: number, p: LiveParams): number {
+  let x = calibratedMidiInput(input, p.pedalInputLow, p.pedalInputHigh);
+  if (p.pedalReverse >= 0.5) x = 127 - x;
+  return midiCurve3(x, p.pedalLow, p.pedalMid, p.pedalHigh);
 }
 
 /**

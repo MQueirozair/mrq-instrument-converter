@@ -1,0 +1,23 @@
+import { build } from 'esbuild';
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import os from 'node:os';
+import path from 'node:path';
+const out = path.join(os.tmpdir(), `mrq-midi-curves-${Date.now()}.cjs`);
+await build({entryPoints:['src/audio/rack/liveControls.ts'], bundle:true, platform:'node', format:'cjs', outfile:out});
+const m = await import(pathToFileURL(out));
+let n = 0;
+function test(name, fn) {fn(); n++; console.log('ok -', name);}
+const p = m.defaultLiveParams();
+test('instrumentos antigos preservam velocity padrão em todos os valores', () => {for(let i=1;i<=127;i++) assert.equal(m.mapLiveVelocity(i,p),m.applyVelocityCurve(i,0));});
+test('curva anterior é preservada em todos os valores',()=>{for(const c of [-100,-25,0,40,100]) for(let i=1;i<=127;i++) assert.equal(m.mapLiveVelocity(i,{...p,velCurve:c}),m.applyVelocityCurve(i,c));});
+test('três pontos e interpolação',()=>{assert.equal(m.midiCurve3(0,10,80,120),10);assert.equal(m.midiCurve3(64,10,80,120),80);assert.equal(m.midiCurve3(127,10,80,120),120);assert.equal(m.midiCurve3(32,10,80,120),45);});
+test('entrada calibrada limita extremos e cobre 0–127',()=>{assert.equal(m.calibratedMidiInput(20,20,100),0);assert.equal(m.calibratedMidiInput(100,20,100),127);assert.equal(m.calibratedMidiInput(5,20,100),0);assert.equal(m.calibratedMidiInput(120,20,100),127);});
+test('calibração velocity mapeia suave e forte',()=>{let c={...p,velocityInputLow:20,velocityInputHigh:100};assert.equal(m.mapLiveVelocity(20,c),1);assert.equal(m.mapLiveVelocity(100,c),127);});
+test('note-off padrão não altera release',()=>{for(let i=0;i<=127;i++)assert.equal(m.noteOffReleaseFactor(i,p),1);});
+test('note-off editado afeta release em pontos selecionados',()=>{let c={...p,noteOffLow:0,noteOffMid:64,noteOffHigh:127};assert.equal(m.noteOffReleaseFactor(0,c),0);assert.equal(m.noteOffReleaseFactor(64,c),64/127);assert.equal(m.noteOffReleaseFactor(127,c),1);});
+test('CC64 padrão e invertido',()=>{assert.equal(m.mapPedalValue(0,p),0);assert.equal(m.mapPedalValue(127,p),127);assert.equal(m.mapPedalValue(64,p),64);assert.equal(m.mapPedalValue(0,{...p,pedalReverse:1}),127);assert.equal(m.mapPedalValue(127,{...p,pedalReverse:1}),0);});
+test('calibração de pedal invertido',()=>{let c={...p,pedalInputLow:20,pedalInputHigh:110,pedalReverse:1};assert.equal(m.mapPedalValue(110,c),0);assert.equal(m.mapPedalValue(20,c),127);});
+test('dados inválidos e calibração degenerada não produzem NaN',()=>{let c=m.clampLiveParams({...p,velocityInputLow:126,velocityInputHigh:2,pedalInputLow:126,pedalInputHigh:1,noteOffMid:NaN});assert(c.velocityInputHigh>c.velocityInputLow);assert(c.pedalInputHigh>c.pedalInputLow);for(const v of [0,64,127])for(const f of [m.mapLiveVelocity,m.noteOffReleaseFactor,m.mapPedalValue])assert(Number.isFinite(f(v,c)));});
+test('velocidade e pedal novos são persistidos por instrumento',()=>{let data=new Map();let s={getItem:k=>data.get(k)??null,setItem:(k,v)=>data.set(k,v)};globalThis.localStorage=s;let c={...p,velocityMid:88,pedalReverse:1,noteOffMid:40};m.saveLiveParams('a',c);let loaded=m.loadLiveParams('a');assert.equal(loaded.velocityMid,88);assert.equal(loaded.noteOffMid,40);assert.equal(loaded.pedalReverse,1);assert.equal(m.loadLiveParams('b').velocityMid,64);});
+console.log(`${n} testes de curvas MIDI passaram.`);

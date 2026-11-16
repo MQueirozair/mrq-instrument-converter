@@ -624,3 +624,32 @@ Verificações em navegador com instrumento sintético: sete abas em 1150, 1280,
 sem sobreposição da barra; alterações de envelope/velocidade por teclado,
 redesenho da curva e persistência ao reabrir. Lint, build e 59 testes de
 controles ao vivo passaram.
+
+
+## 28. v0.2.37 — Curvas MIDI e calibração
+
+O botão Ajustar da curva de velocidade abre um editor com abas Velocidade,
+Note-off e Pedal. Cada aba tem três pontos verticais arrastáveis e sliders
+acessíveis, predefinições e restauração independente. Na velocidade, a linha
+tracejada mostra o resultado com calibração e a curva adicional antiga.
+
+O assistente coleta ao menos quatro notas suaves/fortes no canal MIDI
+selecionado, exige variação mínima e, opcionalmente, captura o valor CC64 do
+pedal solto e pressionado, detectando polaridade inversa. Mostra os resultados
+antes de aplicá-los; cancelar não modifica os ajustes. Os parâmetros seguem o
+mesmo histórico de desfazer/refazer e armazenamento por instrumento.
+
+- Velocity: calibração de entrada, interpolação dos três pontos e curva
+  anterior; defaults preservam exatamente o comportamento anterior.
+- Note-off: a velocidade do MIDI 0x80 modula a duração do release (127 é
+  duração original). Note-on com velocity zero e teclado virtual usam 64.
+  No motor atual o release da última nota atua no gate global; outras notas
+  têm release individual. Não cria amostras de soltura inexistentes.
+- Pedal: CC64 é calibrado, pode ser invertido e passa pela curva e limiar. O
+  motor ainda é binário (sustain ligado/desligado), não implementa meio-pedal
+  contínuo. Todas as notas soltas sob o pedal são mantidas até ele subir.
+
+Testes: compatibilidade da curva antiga em todas as velocities, interpolação,
+calibração, polaridade, persistência e limites; simulação do motor com vozes
+e relógio fake; testes de UI com MIDI simulado, arraste, desfazer e sete abas
+em 1150/1280/1366/1600/1920 × 720. Hardware físico não foi testado.
