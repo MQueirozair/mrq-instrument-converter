@@ -580,7 +580,7 @@ Correções:
   na linha do corpo (sem linha extra abaixo), slider vertical de 44px
   (nova prop `trackHeight` no `VerticalSlider`), labels curtas
   (PRE-DELAY, COR, RATE, FB, TAXA, Depth, Bits, Freq, Alcance — o
-  tooltip do knob mostra o nome completo).
+  tooltip do knob mostra o rótulo e valor).
 - **Grid fixo de 6 colunas** na aba Ferramentas — 17 módulos sempre em
   3 linhas (o flex-wrap quebrava em 4 linhas abaixo de 1280px).
 - **Header em linha única:** Polifonia/Latência saíram do header e foram
@@ -591,3 +591,18 @@ Correções:
 - **Resultado: página inteira em 720px exatos** (1280×720 e 1150×720),
   nas abas Efeitos e Ferramentas — tudo visível, sem scroll e sem
   sobreposição. lint + build + 59/59 testes OK. Nenhum DSP alterado.
+
+
+## 26. v0.2.35 — Evitar sobreposição da barra de status
+
+A verificação anterior usava apenas `scrollHeight`, que não detectava a
+sobreposição causada por um contêiner flexível encolhido. A barra de status
+podia cobrir até 9px do painel de teclado. O layout agora respeita a altura
+mínima de seu conteúdo; se uma janela não tiver espaço suficiente, permite
+rolagem em vez de sobrepor. Os módulos compactos e o teclado foram ajustados
+para manter a folga nas dimensões testadas.
+
+Validação em navegador com instrumento sintético: todas as sete abas em
+1150, 1280, 1366 e 1920px por 720px; sem rolagem, sem sobreposição da
+barra e sem overflow nos corpos dos módulos de Ferramentas. Bypass do Phaser
+testado alternando e restaurando o estado. Sem alteração do DSP.

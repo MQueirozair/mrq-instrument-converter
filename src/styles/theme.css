@@ -2258,7 +2258,7 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
   --mrq-glow: 0 0 18px rgba(35, 139, 255, .35), 0 0 42px rgba(134, 101, 255, .18);
 }
 .live-page { flex: 1; display: flex; flex-direction: column; min-height: 0; padding: 8px; gap: 6px; overflow-y: auto; background: radial-gradient(1200px 500px at 70% -10%, rgba(35,139,255,.08), transparent 60%), var(--mrq-bg); }
-.live-layout { display: flex; gap: var(--mrq-gap); flex: 1; min-height: 0; align-items: flex-start; }
+.live-layout { display: flex; gap: var(--mrq-gap); flex: 1 0 auto; min-height: min-content; align-items: flex-start; }
 .live-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
 /* ---------- Sidebar ---------- */
@@ -2406,7 +2406,7 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .fx-module { background: #0c1220; border: 1px solid var(--mrq-border); border-radius: 11px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 140px; }
 /* v0.2.34: módulo compacto (aba Ferramentas) — cabe 17 módulos em 3
    linhas sem estourar a altura da tela. */
-.fx-module.compact { padding: 5px; gap: 3px; min-width: 132px; }
+.fx-module.compact { padding: 3px 5px; gap: 3px; min-width: 132px; }
 .fx-module.compact .fx-module-body { gap: 3px; align-items: center; }
 .fx-module.compact .fx-module-name { font-size: 10.5px; }
 .fx-module.compact .fx-power { width: 20px; height: 20px; }
@@ -2456,6 +2456,7 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .live-kb-hold:hover { border-color: var(--mrq-cyan); color: var(--mrq-text); }
 .live-kb-hold.active { background: linear-gradient(180deg, #173b6b, #12294d); border-color: var(--mrq-blue); color: var(--mrq-text); box-shadow: 0 0 14px rgba(35,139,255,.45); }
 .live-kb-keys { flex: 1; min-width: 0; }
+.live-kb-keys .playable-kb-svg { height: 48px; }
 .live-kb-velocity { display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; flex: none; width: 90px; }
 .live-kb-vel-bar { width: 100%; height: 10px; background: #080d14; border: 1px solid var(--mrq-border); border-radius: 5px; overflow: hidden; }
 .live-kb-vel-bar span { display: block; height: 100%; background: linear-gradient(90deg, #238bff, #42d9ff); transition: width .08s; }

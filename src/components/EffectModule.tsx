@@ -91,7 +91,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
   const renderExtra = (key: LiveParamKey) => {
     const def = LIVE_PARAM_DEFS[key];
     // v0.2.34: no modo compacto, labels curtas (o nome do módulo já diz o
-    // efeito; o tooltip do knob mostra o nome completo).
+    // efeito; o tooltip do knob mostra o rótulo e valor).
     const label = compact ? (SHORT_EXTRA_LABELS[key] ?? def.label) : def.label;
     return (
       <Knob
