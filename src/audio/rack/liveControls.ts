@@ -26,6 +26,8 @@ export interface LiveParams {
   pan: number;
   tuneCents: number;
   attackMs: number;
+  holdMs: number;
+  decayMs: number;
   releaseMs: number;
   eqLowDb: number;
   eqMidDb: number;
@@ -117,13 +119,15 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
   volumeDb: { key: 'volumeDb', label: 'VOLUME dB', min: -60, max: 12, step: 0.5, format: f1, unit: 'dB', default: 0 },
   pan: { key: 'pan', label: 'PAN', min: -1, max: 1, step: 0.05, format: f2, default: 0 },
   tuneCents: { key: 'tuneCents', label: 'AFINACAO cents', min: -100, max: 100, step: 1, format: f1, unit: 'ct', default: 0 },
-  attackMs: { key: 'attackMs', label: 'ATAQUE ms', min: 0, max: 2000, step: 5, format: f1, unit: 'ms', default: 0 },
-  releaseMs: { key: 'releaseMs', label: 'RELEASE ms', min: 0, max: 5000, step: 10, format: f1, unit: 'ms', default: 100 },
+  attackMs: { key: 'attackMs', label: 'ATAQUE ms', min: 0, max: 2000, step: 5, format: f1, unit: 'ms', default: 0, group: 'amplitude' },
+  holdMs: { key: 'holdMs', label: 'HOLD ms', min: 0, max: 5000, step: 10, format: f1, unit: 'ms', default: 0, group: 'amplitude' },
+  decayMs: { key: 'decayMs', label: 'DECAY ms', min: 0, max: 5000, step: 10, format: f1, unit: 'ms', default: 250, group: 'amplitude' },
+  releaseMs: { key: 'releaseMs', label: 'RELEASE ms', min: 0, max: 5000, step: 10, format: f1, unit: 'ms', default: 100, group: 'amplitude' },
   eqLowDb: { key: 'eqLowDb', label: 'EQ GRAVES dB', min: -15, max: 15, step: 0.5, format: f1, unit: 'dB', default: 0 },
   eqMidDb: { key: 'eqMidDb', label: 'EQ MEDIOS dB', min: -15, max: 15, step: 0.5, format: f1, unit: 'dB', default: 0 },
   eqHighDb: { key: 'eqHighDb', label: 'EQ AGUDOS dB', min: -15, max: 15, step: 0.5, format: f1, unit: 'dB', default: 0 },
   driveDb: { key: 'driveDb', label: 'DRIVE dB', min: 0, max: 24, step: 0.5, format: f1, unit: 'dB', default: 0 },
-  sustain: { key: 'sustain', label: 'SUSTAIN %', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 100 },
+  sustain: { key: 'sustain', label: 'SUSTAIN %', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 100, group: 'amplitude' },
   reverb: { key: 'reverb', label: 'REVERB %', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 0 },
   reverbSize: { key: 'reverbSize', label: 'TAMANHO %', min: 10, max: 100, step: 1, format: f1, unit: '%', default: 75 },
   reverbDamp: { key: 'reverbDamp', label: 'DAMP %', min: 0, max: 100, step: 1, format: f1, unit: '%', default: 50 },
@@ -178,8 +182,8 @@ export const LIVE_PARAM_DEFS: Record<LiveParamKey, LiveParamDef> = {
 
 /** Ordem dos knobs da linha 1 (depois dos steppers). */
 export const LIVE_KNOBS_ROW1: LiveParamKey[] = [
-  'volumeDb', 'pan', 'tuneCents', 'attackMs', 'releaseMs',
-  'eqLowDb', 'eqMidDb', 'eqHighDb', 'driveDb', 'sustain',
+  'volumeDb', 'pan', 'tuneCents', 'attackMs', 'holdMs', 'decayMs', 'sustain', 'releaseMs',
+  'eqLowDb', 'eqMidDb', 'eqHighDb', 'driveDb',
 ];
 
 /** Ordem dos knobs de "EFEITOS / AO VIVO". */
@@ -293,6 +297,71 @@ export function reverbWetGain(reverbPct: number): number {
 /** SUSTAIN % (0..100) → nível de sustentação do envelope (0..1). */
 export function sustainLevel(sustainPct: number): number {
   return Math.min(100, Math.max(0, sustainPct)) / 100;
+}
+
+/** Estágios do envelope AHDSR (v0.2.31). */
+export type EnvelopeStage = 'idle' | 'attack' | 'hold' | 'decay' | 'sustain' | 'release';
+
+/** Parâmetros do envelope AHDSR (tempos em ms, sustain em 0..1). */
+export interface AhdsrParams {
+  attackMs: number;
+  holdMs: number;
+  decayMs: number;
+  sustain: number;
+  releaseMs: number;
+}
+
+/**
+ * Pontos da curva AHDSR (tempo em ms, nível 0..1) — função pura usada pelo
+ * gráfico da interface e pelos testes. O DSP (LiveInstrumentEngine) agenda
+ * os mesmos estágios com ramps do Web Audio (sample-accurate).
+ *
+ * Retorna os vértices: (0,0) → pico do attack → fim do hold → nível de
+ * sustain → (fim do sustain + release, 0). Estágios com tempo 0 colapsam
+ * (ex.: holdMs=0 → o pico é um único ponto, compatível com o ADSR antigo).
+ */
+export function ahdsrCurvePoints(p: AhdsrParams): Array<{ t: number; level: number }> {
+  const a = Math.max(0, p.attackMs);
+  const h = Math.max(0, p.holdMs);
+  const d = Math.max(0, p.decayMs);
+  const s = Math.min(1, Math.max(0, p.sustain));
+  const r = Math.max(0, p.releaseMs);
+  const tPeak = a;
+  const tHoldEnd = a + h;
+  const tDecayEnd = a + h + d;
+  return [
+    { t: 0, level: 0 },
+    { t: tPeak, level: 1 },
+    { t: tHoldEnd, level: 1 },
+    { t: tDecayEnd, level: s },
+    { t: tDecayEnd + r, level: 0 },
+  ];
+}
+
+/**
+ * Nível do envelope AHDSR num instante `tMs` após o noteOn (função pura,
+ * testável). `noteOffMs` = quando a tecla foi solta (Infinity = ainda
+ * segurada). Usado nos testes pra provar que o Hold mantém o pico e que o
+ * Decay só começa depois do Hold.
+ */
+export function ahdsrLevelAt(p: AhdsrParams, tMs: number, noteOffMs: number): number {
+  const a = Math.max(0, p.attackMs);
+  const h = Math.max(0, p.holdMs);
+  const d = Math.max(0, p.decayMs);
+  const s = Math.min(1, Math.max(0, p.sustain));
+  const r = Math.max(0, p.releaseMs);
+  const t = Math.max(0, tMs);
+  // Release: a partir do noteOff, cai do nível atual até 0 em `r` ms.
+  if (t >= noteOffMs) {
+    if (r <= 0) return 0;
+    const startLevel = ahdsrLevelAt(p, noteOffMs, Infinity);
+    const k = Math.min(1, (t - noteOffMs) / r);
+    return startLevel * (1 - k);
+  }
+  if (t < a) return a <= 0 ? 1 : t / a; // attack
+  if (t < a + h) return 1; // hold (pico)
+  if (t < a + h + d) return d <= 0 ? s : 1 + (s - 1) * ((t - a - h) / d); // decay
+  return s; // sustain
 }
 
 /**

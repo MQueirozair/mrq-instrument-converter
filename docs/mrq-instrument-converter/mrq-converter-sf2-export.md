@@ -496,3 +496,34 @@ interface).
 - **Validação:** screenshots Playwright em 1280×720, 1366×768, 1600×900
   e 1920×1080 — 6 módulos FX em 1 linha em todos os tamanhos, sem
   sobreposição nem overflow. lint + build + 46/46 testes passando.
+
+## 22. v0.2.31 — Envelope AHDSR completo com Hold real no DSP
+
+O envelope dos Controles ao Vivo era ADS (Attack/Decay fixo de 250ms/
+Sustain/Release) — **não havia estágio Hold**. Esta versão implementa um
+AHDSR de 5 estágios funcionais no DSP, com o Hold controlando de verdade
+a amplitude do áudio.
+
+- **Novos parâmetros:** `holdMs` (0–5000ms, padrão 0) e `decayMs`
+  (0–5000ms, padrão 250ms — o valor que era fixo no código). Grupo
+  `amplitude`. Compatibilidade total: `clampLiveParams` aplica os padrões
+  a projetos antigos sem esses campos (hold=0 = ADSR clássico, som
+  inalterado).
+- **DSP real (LiveInstrumentEngine):** o gate agora agenda os 5 estágios
+  com ramps do Web Audio (sample-accurate, sem timer de jitter):
+  Attack → pico, **Hold → pico plano por holdMs**, Decay → nível de
+  sustain, Sustain → mantém, Release → 0. Note Off durante Attack/Hold/
+  Decay parte do nível atual (sem salto).
+- **Pedal de sustain CC64:** `setSustainPedal()` — com o pedal pressionado,
+  soltar as teclas não fecha o gate (vozes sustentadas); ao liberar o
+  pedal, o Release começa. Distinto do Hold do envelope. Re-trigger de
+  nota pedal-segurada volta a ser "tecla". Sem notas presas.
+- **Interface:** knobs Ataque/Hold/Decay/Sustain/Release agrupados na
+  seção Amplitude + **gráfico AHDSR** (SVG, 5 estágios com nós) que
+  espelha os valores reais via `ahdsrCurvePoints()`.
+- **Funções puras testáveis:** `ahdsrCurvePoints()` e `ahdsrLevelAt()`
+  em `liveControls.ts` — a mesma matemática que o engine agenda.
+- **Testes:** 13 novos (59/59 no total) cobrindo os 12 cenários pedidos:
+  attack/hold 0, attack 500/hold 1000, attack 100/hold 3000, hold 0
+  (compat), noteOff em cada estágio, CC64, polifonia, curva e
+  persistência.

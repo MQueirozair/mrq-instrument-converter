@@ -52,6 +52,8 @@ const {
   delayFeedbackGain,
   reverbWetGain,
   sustainLevel,
+  ahdsrCurvePoints,
+  ahdsrLevelAt,
   referenceRootFromZones,
   keyboardRangeFor,
   noteName,
@@ -98,9 +100,9 @@ function test(name, fn) {
 }
 
 // --- Definições e padrões ---
-test('61 controles definidos, todos com min < max e padrão dentro da faixa', () => {
+test('63 controles definidos, todos com min < max e padrão dentro da faixa', () => {
   const keys = Object.keys(LIVE_PARAM_DEFS);
-  assert.equal(keys.length, 61);
+  assert.equal(keys.length, 63);
   for (const [key, def] of Object.entries(LIVE_PARAM_DEFS)) {
     assert.ok(def.min < def.max, `${key}: min < max`);
     assert.ok(def.default >= def.min && def.default <= def.max, `${key}: padrão dentro da faixa`);
@@ -108,15 +110,15 @@ test('61 controles definidos, todos com min < max e padrão dentro da faixa', ()
   }
 });
 
-test('ordem das linhas: 5 steppers + 10 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 60 (+panMode)', () => {
+test('ordem das linhas: 5 steppers + 12 + 12 + 27 ferramentas + 2 novidades + 4 linha MIDI = 62 (+panMode)', () => {
   assert.equal(LIVE_STEPPERS.length, 5);
-  assert.equal(LIVE_KNOBS_ROW1.length, 10);
+  assert.equal(LIVE_KNOBS_ROW1.length, 12);
   assert.equal(LIVE_KNOBS_FX.length, 12);
   assert.equal(LIVE_KNOBS_TOOLS.length, 27);
   assert.equal(LIVE_KNOBS_NEW.length, 2);
   assert.equal(LIVE_MIDI_ROW.length, 4);
   const all = [...LIVE_STEPPERS, ...LIVE_KNOBS_ROW1, ...LIVE_KNOBS_FX, ...LIVE_KNOBS_TOOLS, ...LIVE_KNOBS_NEW, ...LIVE_MIDI_ROW];
-  assert.equal(new Set(all).size, 60);
+  assert.equal(new Set(all).size, 62);
   // panMode é parâmetro (persistido) mas não é knob de nenhuma linha.
   assert.ok('panMode' in LIVE_PARAM_DEFS);
   assert.ok(!all.includes('panMode'));
@@ -635,6 +637,139 @@ test('panMode (v0.2.26): padrão BALANCE (0), clamp 0..1, persiste', () => {
   saveLiveParams('/musica/orgao.mrq', { ...defaultLiveParams(), panMode: 1 });
   assert.equal(loadLiveParams('/musica/orgao.mrq').panMode, 1);
   clearLiveParams('/musica/orgao.mrq');
+});
+
+
+// --- Envelope AHDSR (v0.2.31) ----------------------------------------------
+// O Hold é um estágio REAL do DSP: mantém o pico de amplitude por holdMs
+// DEPOIS do attack e ANTES do decay. Estes testes provam o comportamento
+// com a função pura ahdsrLevelAt (a mesma matemática que o engine agenda
+// com ramps sample-accurate do Web Audio).
+
+test('AHDSR: holdMs/decayMs existem, hold padrão 0 (compatível com ADSR antigo)', () => {
+  const p = defaultLiveParams();
+  assert.equal(p.holdMs, 0, 'hold padrão 0 — projetos antigos não mudam de som');
+  assert.equal(p.decayMs, 250, 'decay padrão 250ms (o valor que era fixo no código)');
+  assert.equal(LIVE_PARAM_DEFS.holdMs.unit, 'ms');
+  assert.equal(LIVE_PARAM_DEFS.decayMs.unit, 'ms');
+  assert.equal(LIVE_PARAM_DEFS.holdMs.group, 'amplitude');
+  // projetos antigos (sem holdMs/decayMs) ganham os padrões via clamp
+  const old = clampLiveParams({ attackMs: 10, sustain: 50, releaseMs: 200 });
+  assert.equal(old.holdMs, 0);
+  assert.equal(old.decayMs, 250);
+  assert.equal(old.attackMs, 10);
+});
+
+test('AHDSR 1: Attack 0ms e Hold 0ms — pico imediato, decay começa já', () => {
+  const p = { attackMs: 0, holdMs: 0, decayMs: 100, sustain: 0.5, releaseMs: 100 };
+  assert.equal(ahdsrLevelAt(p, 0, Infinity), 1, 'attack 0 = pico no instante 0');
+  assert.equal(ahdsrLevelAt(p, 50, Infinity), 0.75, 'meio do decay (100ms)');
+  assert.equal(ahdsrLevelAt(p, 100, Infinity), 0.5, 'fim do decay = sustain');
+});
+
+test('AHDSR 2: Attack 500ms e Hold 1000ms — pico fica plano por 1s', () => {
+  const p = { attackMs: 500, holdMs: 1000, decayMs: 200, sustain: 0.4, releaseMs: 100 };
+  assert.equal(ahdsrLevelAt(p, 250, Infinity), 0.5, 'meio do attack');
+  assert.equal(ahdsrLevelAt(p, 500, Infinity), 1, 'fim do attack = pico');
+  assert.equal(ahdsrLevelAt(p, 1000, Infinity), 1, 'meio do hold = ainda pico');
+  assert.equal(ahdsrLevelAt(p, 1499, Infinity), 1, 'fim do hold = ainda pico');
+  assert.equal(ahdsrLevelAt(p, 1600, Infinity), 0.7, 'meio do decay');
+  assert.equal(ahdsrLevelAt(p, 1700, Infinity), 0.4, 'fim do decay = sustain');
+});
+
+test('AHDSR 3: Attack 100ms e Hold 3000ms — hold longo segura o pico', () => {
+  const p = { attackMs: 100, holdMs: 3000, decayMs: 100, sustain: 0.8, releaseMs: 50 };
+  assert.equal(ahdsrLevelAt(p, 100, Infinity), 1);
+  assert.equal(ahdsrLevelAt(p, 1500, Infinity), 1, '1.5s dentro do hold');
+  assert.equal(ahdsrLevelAt(p, 3099, Infinity), 1, 'quase fim do hold');
+  assert.equal(ahdsrLevelAt(p, 3150, Infinity), 0.9, 'meio do decay');
+  assert.equal(ahdsrLevelAt(p, 3200, Infinity), 0.8, 'sustain');
+});
+
+test('AHDSR 4: Hold 0ms = ADSR clássico (compatibilidade)', () => {
+  const p = { attackMs: 100, holdMs: 0, decayMs: 100, sustain: 0.6, releaseMs: 100 };
+  assert.equal(ahdsrLevelAt(p, 100, Infinity), 1, 'pico no fim do attack');
+  assert.equal(ahdsrLevelAt(p, 150, Infinity), 0.8, 'decay começa logo após o pico');
+  assert.equal(ahdsrLevelAt(p, 200, Infinity), 0.6, 'sustain');
+});
+
+test('AHDSR 5: Note Off durante o Attack — release parte do nível atual', () => {
+  const p = { attackMs: 1000, holdMs: 500, decayMs: 200, sustain: 0.5, releaseMs: 200 };
+  // tecla solta aos 500ms (meio do attack, nível 0.5)
+  assert.equal(ahdsrLevelAt(p, 500, 500), 0.5, 'nível no momento do noteOff');
+  assert.equal(ahdsrLevelAt(p, 600, 500), 0.25, 'meio do release (0.5 → 0)');
+  assert.equal(ahdsrLevelAt(p, 700, 500), 0, 'fim do release = silêncio');
+});
+
+test('AHDSR 6: Note Off durante o Hold — release parte do pico', () => {
+  const p = { attackMs: 100, holdMs: 2000, decayMs: 200, sustain: 0.5, releaseMs: 300 };
+  // tecla solta aos 1000ms (dentro do hold, nível 1.0)
+  assert.equal(ahdsrLevelAt(p, 1000, 1000), 1, 'pico no noteOff');
+  assert.equal(ahdsrLevelAt(p, 1150, 1000), 0.5, 'meio do release');
+  assert.equal(ahdsrLevelAt(p, 1300, 1000), 0, 'fim do release');
+});
+
+test('AHDSR 7: Note Off durante o Decay — release parte do nível de decay', () => {
+  const p = { attackMs: 100, holdMs: 0, decayMs: 400, sustain: 0.2, releaseMs: 200 };
+  // tecla solta aos 300ms (meio do decay: 1 + (0.2-1)*0.5 = 0.6)
+  assert.equal(ahdsrLevelAt(p, 300, 300), 0.6, 'nível no noteOff');
+  assert.equal(ahdsrLevelAt(p, 400, 300), 0.3, 'meio do release');
+  assert.equal(ahdsrLevelAt(p, 500, 300), 0, 'fim do release');
+});
+
+test('AHDSR 8: Note Off durante o Sustain — release do nível de sustain', () => {
+  const p = { attackMs: 50, holdMs: 100, decayMs: 100, sustain: 0.7, releaseMs: 250 };
+  // tecla solta aos 1000ms (sustain 0.7)
+  assert.equal(ahdsrLevelAt(p, 1000, 1000), 0.7);
+  assert.equal(ahdsrLevelAt(p, 1125, 1000), 0.35, 'meio do release');
+  assert.equal(ahdsrLevelAt(p, 1250, 1000), 0, 'fim do release');
+});
+
+test('AHDSR 9: Sustain pedal (CC64) — nota segura até o pedal liberar', () => {
+  // Modelado: com o pedal, o noteOff efetivo é adiado (noteOffMs = Infinity
+  // enquanto o pedal está down). O engine faz isso retendo o release.
+  const p = { attackMs: 100, holdMs: 0, decayMs: 100, sustain: 0.6, releaseMs: 200 };
+  // tecla solta aos 500ms mas pedal segura até 2000ms
+  assert.equal(ahdsrLevelAt(p, 1500, Infinity), 0.6, 'pedal down: ainda em sustain');
+  assert.equal(ahdsrLevelAt(p, 2000, 2000), 0.6, 'pedal libera: começa o release');
+  assert.equal(ahdsrLevelAt(p, 2100, 2000), 0.3, 'meio do release');
+  assert.equal(ahdsrLevelAt(p, 2200, 2000), 0, 'fim do release');
+});
+
+test('AHDSR 10: Polifonia — cada nota tem seu envelope (função pura por nota)', () => {
+  const p = { attackMs: 200, holdMs: 500, decayMs: 100, sustain: 0.5, releaseMs: 100 };
+  // nota A: noteOn em t=0, noteOff em t=700 (fim do hold, pico)
+  // nota B: noteOn em t=0, noteOff em t=2000 (sustain)
+  assert.equal(ahdsrLevelAt(p, 700, 700), 1, 'A no fim do hold quando solta');
+  assert.equal(ahdsrLevelAt(p, 1700, Infinity), 0.5, 'B em sustain no mesmo instante');
+  assert.equal(ahdsrLevelAt(p, 750, 700), 0.5, 'A meio do release');
+  assert.equal(ahdsrLevelAt(p, 2000, 2000), 0.5, 'B solta em sustain');
+});
+
+test('AHDSR 11: ahdsrCurvePoints — vértices coerentes com os estágios', () => {
+  const pts = ahdsrCurvePoints({ attackMs: 100, holdMs: 300, decayMs: 200, sustain: 0.5, releaseMs: 150 });
+  assert.equal(pts.length, 5);
+  assert.deepEqual(pts[0], { t: 0, level: 0 });
+  assert.deepEqual(pts[1], { t: 100, level: 1 }, 'pico no fim do attack');
+  assert.deepEqual(pts[2], { t: 400, level: 1 }, 'fim do hold ainda no pico');
+  assert.deepEqual(pts[3], { t: 600, level: 0.5 }, 'fim do decay no sustain');
+  assert.deepEqual(pts[4], { t: 750, level: 0 }, 'fim do release em silêncio');
+  // hold 0 colapsa o pico num único ponto (ADSR clássico)
+  const flat = ahdsrCurvePoints({ attackMs: 100, holdMs: 0, decayMs: 200, sustain: 0.5, releaseMs: 150 });
+  assert.deepEqual(flat[1], { t: 100, level: 1 });
+  assert.deepEqual(flat[2], { t: 100, level: 1 });
+});
+
+test('AHDSR 12: holdMs/decayMs persistem por instrumento (salvar/reabrir)', () => {
+  saveLiveParams('/musica/piano.mrq', { ...defaultLiveParams(), holdMs: 1500, decayMs: 300 });
+  const loaded = loadLiveParams('/musica/piano.mrq');
+  assert.equal(loaded.holdMs, 1500);
+  assert.equal(loaded.decayMs, 300);
+  clearLiveParams('/musica/piano.mrq');
+  // clamp limita aos ranges
+  assert.equal(clampLiveParams({ holdMs: 99999 }).holdMs, 5000);
+  assert.equal(clampLiveParams({ holdMs: -5 }).holdMs, 0);
+  assert.equal(clampLiveParams({ decayMs: 99999 }).decayMs, 5000);
 });
 
 console.log(`\n${passed} teste(s) passaram. Tudo certo.`);

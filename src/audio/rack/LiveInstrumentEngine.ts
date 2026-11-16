@@ -158,6 +158,8 @@ export class LiveInstrumentEngine {
       clearTimeout(pending);
       this.pendingRelease.delete(transposed);
     }
+    // Re-toque de uma nota segurada pelo pedal: ela volta a ser "tecla".
+    this.pedalHeldVoices.delete(transposed);
     if (this.heldNotes.size === 0) this.triggerAttack();
     this.heldNotes.set(original, { transposed, velocity: shaped });
     this.voice.noteOn(transposed, shaped);
@@ -172,22 +174,32 @@ export class LiveInstrumentEngine {
     if (!held) return;
     this.heldNotes.delete(original);
     const transposed = held.transposed;
-    if (this.heldNotes.size === 0) {
+    if (this.heldNotes.size === 0 && !this.sustainPedalDown) {
       this.triggerRelease();
       this.stopArp();
-      // A voz continua soando durante o release do gate — sem isso, o
-      // release longo (ex.: 554ms) seria cortado pelo release curto (~120ms)
-      // da própria voz.
-      const releaseMs = Math.max(0, this.params.releaseMs);
-      const id = setTimeout(() => {
-        this.pendingRelease.delete(transposed);
-        this.voice.noteOff(transposed);
-      }, releaseMs);
-      this.pendingRelease.set(transposed, id);
+      this.scheduleVoiceOff(transposed);
+    } else if (this.heldNotes.size === 0 && this.sustainPedalDown) {
+      // Pedal CC64 pressionado: a voz continua soando (sustain) — ela só
+      // é liberada quando o pedal for solto (ver setSustainPedal). Não
+      // chama voice.noteOff agora nem fecha o gate.
+      this.pedalHeldVoices.add(transposed);
     } else {
       this.voice.noteOff(transposed);
     }
     this.refreshDensity();
+  }
+
+  /** Adia o noteOff da voz até o gate terminar de fechar (release). */
+  private scheduleVoiceOff(transposed: number) {
+    // A voz continua soando durante o release do gate — sem isso, o
+    // release longo (ex.: 554ms) seria cortado pelo release curto (~120ms)
+    // da própria voz.
+    const releaseMs = Math.max(0, this.params.releaseMs);
+    const id = setTimeout(() => {
+      this.pendingRelease.delete(transposed);
+      this.voice.noteOff(transposed);
+    }, releaseMs);
+    this.pendingRelease.set(transposed, id);
   }
 
   // --- Arpejador -----------------------------------------------------------
@@ -251,28 +263,79 @@ export class LiveInstrumentEngine {
     this.chain.setNoteDensity(density);
   }
 
-  // --- Envelope (gate global) ----------------------------------------------
+  // --- Envelope AHDSR (gate global, v0.2.31) --------------------------------
+  //
+  // Cinco estágios reais no DSP, agendados com ramps do Web Audio
+  // (sample-accurate — o renderizador de áudio interpola em resolução de
+  // amostra, sem jitter de timer):
+  //   ATTACK  → rampa até o pico (1.0) em attackMs
+  //   HOLD    → mantém o pico por holdMs (o estágio novo — antes não existia)
+  //   DECAY   → rampa do pico até o nível de sustain em decayMs
+  //   SUSTAIN → mantém o nível de sustain enquanto houver tecla/pedal
+  //   RELEASE → rampa até 0 em releaseMs no noteOff (ou fim do pedal CC64)
+  //
+  // O gate é global ("INSTRUMENTO INTEIRO", como o resto dos controles):
+  // abre no primeiro noteOn e fecha quando a última nota/pedal libera.
+  // Se a tecla for solta durante Attack/Hold/Decay, o Release parte do
+  // nível atual (sem salto). O pedal CC64 (sustain) segura o gate aberto
+  // mesmo com todas as teclas soltas.
+
+  /** Pedal de sustain MIDI (CC64) — enquanto down, o gate não fecha. */
+  private sustainPedalDown = false;
+  /** Vozes (transpostas) soltas da tecla mas seguradas pelo pedal CC64. */
+  private pedalHeldVoices = new Set<number>();
 
   private triggerAttack() {
     const now = this.ctx.currentTime;
-    const attackSec = Math.max(0.001, this.params.attackMs / 1000);
+    const attackSec = Math.max(0.0005, this.params.attackMs / 1000);
+    const holdSec = Math.max(0, this.params.holdMs / 1000);
+    const decaySec = Math.max(0.0005, this.params.decayMs / 1000);
     const sustain = sustainLevel(this.params.sustain);
     const g = this.gate.gain;
     g.cancelScheduledValues(now);
     g.setValueAtTime(g.value, now);
+    // ATTACK: sobe até o pico.
     g.linearRampToValueAtTime(1, now + attackSec);
-    if (sustain < 0.999) {
-      g.linearRampToValueAtTime(sustain, now + attackSec + 0.25);
-    }
+    // HOLD: segura o pico até (attack + hold) — o ramp de decay só começa
+    // depois, então o pico fica plano durante o hold (sem timer, tudo no
+    // relógio de áudio).
+    const decayStart = now + attackSec + holdSec;
+    g.setValueAtTime(1, decayStart);
+    // DECAY: desce do pico até o nível de sustain.
+    g.linearRampToValueAtTime(sustain, decayStart + decaySec);
+    // SUSTAIN: o valor final permanece (nenhum ramp posterior).
   }
 
   private triggerRelease() {
     const now = this.ctx.currentTime;
-    const releaseSec = Math.max(0.001, this.params.releaseMs / 1000);
+    const releaseSec = Math.max(0.0005, this.params.releaseMs / 1000);
     const g = this.gate.gain;
     g.cancelScheduledValues(now);
+    // Parte do nível atual (pode estar em Attack/Hold/Decay/Sustain) — sem
+    // salto de amplitude.
     g.setValueAtTime(g.value, now);
     g.linearRampToValueAtTime(0, now + releaseSec);
+  }
+
+  /**
+   * Pedal de sustain MIDI (CC64). Com o pedal pressionado, soltar todas as
+   * teclas NÃO fecha o gate; ao soltar o pedal (sem teclas), o Release
+   * começa. Distinto do Hold do envelope (estágio automático pós-attack).
+   */
+  setSustainPedal(down: boolean) {
+    if (this.disposed) return;
+    const was = this.sustainPedalDown;
+    this.sustainPedalDown = down;
+    if (was && !down && this.heldNotes.size === 0) {
+      // Pedal liberado sem teclas: fecha o gate e libera as vozes que
+      // estavam sendo sustentadas pelo pedal.
+      this.triggerRelease();
+      this.stopArp();
+      for (const transposed of this.pedalHeldVoices) {
+        this.scheduleVoiceOff(transposed);
+      }
+      this.pedalHeldVoices.clear();
+    }
   }
 
   allNotesOff() {

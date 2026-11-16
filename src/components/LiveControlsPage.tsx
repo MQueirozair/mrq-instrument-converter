@@ -32,6 +32,7 @@ import {
   LIVE_MIDI_ROW,
   LIVE_PARAM_DEFS,
   LIVE_STEPPERS,
+  ahdsrCurvePoints,
   applyVelocityCurve,
   clearLiveBypass,
   clearLiveParams,
@@ -47,6 +48,7 @@ import {
   pressureMacro,
   saveLiveBypass,
   saveLiveParams,
+  sustainLevel,
   type LiveBypass,
   type LiveEffectId,
   type LiveParamKey,
@@ -657,6 +659,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           const value = data[2] ?? 0;
           if (command === 0x90 && value > 0) noteOn(number, value);
           else if (command === 0x80 || (command === 0x90 && value === 0)) noteOff(number);
+          // v0.2.31: pedal de sustain (CC64) — segura as notas até liberar.
+          else if (command === 0xb0 && number === 64) engineRef.current?.setSustainPedal(value >= 64);
         };
       });
       access.onstatechange = refresh;
@@ -687,6 +691,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         step={def.step}
         defaultValue={def.default}
         format={key === 'pan' ? (v) => panDisplayLabel(v) : def.format}
+        unit={key === 'pan' ? undefined : def.unit}
         onChange={(v) => updateParam(key, v)}
         disabled={fxId ? bypass[fxId] : false}
         size={size}
@@ -707,6 +712,35 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       >
         <Power size={12} />
       </button>
+    );
+  }
+
+  /** Gráfico do envelope AHDSR (SVG, 5 estágios) — espelha o DSP real
+   *  (LiveInstrumentEngine agenda os mesmos estágios com ramps). */
+  function renderAhdsrGraph() {
+    const pts = ahdsrCurvePoints({
+      attackMs: params.attackMs,
+      holdMs: params.holdMs,
+      decayMs: params.decayMs,
+      sustain: sustainLevel(params.sustain),
+      releaseMs: params.releaseMs,
+    });
+    const total = Math.max(1, pts[pts.length - 1].t);
+    const W = 92;
+    const H = 44;
+    const px = pts.map((p) => `${(4 + (p.t / total) * (W - 8)).toFixed(1)},${(H - 4 - p.level * (H - 10)).toFixed(1)}`);
+    return (
+      <div className="live-ahdsr">
+        <span className="knob-label">ENVELOPE AHDSR</span>
+        <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+          <line x1="4" y1={H - 4} x2={W - 4} y2={H - 4} stroke="#2a313b" strokeWidth="1" />
+          <polyline points={px.join(' ')} fill="none" stroke="#54c9ef" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+          {pts.map((p, i) => (
+            <circle key={i} cx={4 + (p.t / total) * (W - 8)} cy={H - 4 - p.level * (H - 10)} r="2.2" fill="#0c1220" stroke="#54c9ef" strokeWidth="1.4" />
+          ))}
+        </svg>
+        <span className="live-ahdsr-val">A {Math.round(params.attackMs)} · H {Math.round(params.holdMs)} · D {Math.round(params.decayMs)} · S {Math.round(params.sustain)}% · R {Math.round(params.releaseMs)}</span>
+      </div>
     );
   }
 
@@ -903,6 +937,40 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 {LIVE_MIDI_ROW.map((key) => {
                   const def = LIVE_PARAM_DEFS[key];
                   const value = params[key];
+                  // v0.2.30: Canal MIDI e Velocidade como selects (foto de
+                  // referência); Oitava como stepper; Modo como select.
+                  if (key === 'midiChannel') {
+                    return (
+                      <label key={key} className="live-midi-field">
+                        <span>{def.label}</span>
+                        <select
+                          value={Math.round(value)}
+                          onChange={(e) => updateParam(key, Number(e.target.value))}
+                          title={def.label}
+                        >
+                          {Array.from({ length: 16 }, (_, i) => (
+                            <option key={i + 1} value={i + 1}>{i + 1}</option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  }
+                  if (key === 'defaultVelocity') {
+                    return (
+                      <label key={key} className="live-midi-field">
+                        <span>{def.label}</span>
+                        <select
+                          value={Math.round(value)}
+                          onChange={(e) => updateParam(key, Number(e.target.value))}
+                          title={def.label}
+                        >
+                          {[1, 16, 32, 48, 64, 80, 96, 100, 112, 127].map((v) => (
+                            <option key={v} value={v}>{v}</option>
+                          ))}
+                        </select>
+                      </label>
+                    );
+                  }
                   if (key === 'playMode') {
                     return (
                       <label key={key} className="live-midi-field">
@@ -970,8 +1038,15 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   </div>
                 </div>
                 {renderKnob('tuneCents')}
-                {renderKnob('attackMs')}
-                {renderKnob('releaseMs')}
+                {/* v0.2.31: envelope AHDSR completo (Attack | Hold | Decay | Sustain | Release) */}
+                <div className="live-knob-group live-env-group">
+                  {renderKnob('attackMs', 'sm')}
+                  {renderKnob('holdMs', 'sm')}
+                  {renderKnob('decayMs', 'sm')}
+                  {renderKnob('sustain', 'sm')}
+                  {renderKnob('releaseMs', 'sm')}
+                </div>
+                {renderAhdsrGraph()}
                 <div className="live-knob-group">
                   {renderPower('eq', 'EQ')}
                   {renderKnob('eqLowDb')}
@@ -982,7 +1057,6 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                   {renderPower('drive', 'DRIVE')}
                   {renderKnob('driveDb')}
                 </div>
-                {renderKnob('sustain')}
                 {renderVelocityCurve()}
               </div>
 
@@ -1070,6 +1144,15 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                       <b>{params.octave > 0 ? `+${params.octave}` : params.octave}</b>
                       <button type="button" onClick={() => updateParam('octave', params.octave + 1)} title="Oitava acima">›</button>
                     </div>
+                    <button
+                      type="button"
+                      className={`live-kb-hold${hold ? ' active' : ''}`}
+                      onClick={toggleHold}
+                      aria-pressed={hold}
+                      title="Hold (pedal de sustain): as notas continuam soando até desligar"
+                    >
+                      Hold
+                    </button>
                   </div>
                   <div className="live-kb-keys">
                     <PlayableKeyboard
