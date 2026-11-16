@@ -2332,24 +2332,24 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 .live-stepper-note { font-size: 10.5px; color: var(--mrq-cyan); font-weight: 800; }
 
 /* ---------- Knobs principais ---------- */
-.live-knobs { display: flex; gap: 3px; flex-wrap: wrap; background: linear-gradient(180deg, #101722, #0d1420); border: 1px solid var(--mrq-border); border-radius: var(--mrq-radius); padding: 12px; box-shadow: var(--mrq-glow); }
+.live-knobs { display: flex; gap: 1px; flex-wrap: wrap; background: linear-gradient(180deg, #101722, #0d1420); border: 1px solid var(--mrq-border); border-radius: var(--mrq-radius); padding: 8px 10px; box-shadow: var(--mrq-glow); }
 .live-knobs-main { align-items: flex-start; }
-.live-knob-group { display: flex; gap: 3px; align-items: flex-start; }
+.live-knob-group { display: flex; gap: 2px; align-items: flex-start; }
 .live-power { background: #080d14; border: 1px solid var(--mrq-border); color: #4ade80; border-radius: 50%; width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; margin-top: 24px; flex: none; }
 .live-power:hover { border-color: var(--mrq-cyan); }
 .live-power.off { color: #8a8f98; opacity: .6; }
-.live-velcurve { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 70px; }
+.live-velcurve { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 50px; }
 .live-velcurve-val { font-size: 10px; color: var(--mrq-muted); font-weight: 700; }
 .live-env-group { gap: 6px; }
-.live-ahdsr { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 82px; }
+.live-ahdsr { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; }
 .live-ahdsr-val { font-size: 9px; color: var(--mrq-muted); font-weight: 700; white-space: nowrap; }
 
 /* ---------- Knob premium ---------- */
-.mrq-knob-control { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 48px; }
-.mrq-knob-control.knob-sm { min-width: 38px; }
-.mrq-knob-control.knob-lg { min-width: 58px; }
+.mrq-knob-control { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 38px; }
+.mrq-knob-control.knob-sm { min-width: 30px; }
+.mrq-knob-control.knob-lg { min-width: 52px; }
 .mrq-knob-control.disabled { opacity: .45; }
-.mrq-knob-label { font-size: 8px; font-weight: 800; letter-spacing: .01em; color: var(--mrq-muted); text-align: center; text-transform: uppercase; line-height: 1.15; }
+.mrq-knob-label { font-size: 7.5px; font-weight: 800; letter-spacing: 0; color: var(--mrq-muted); text-align: center; text-transform: uppercase; line-height: 1.15; }
 .mrq-knob {
   border-radius: 50%;
   padding: 3px;
@@ -2458,8 +2458,8 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
 /* ---------- Seletor de modo de pan ---------- */
 .live-panmode { display: flex; flex-direction: column; align-items: center; gap: 6px; padding-top: 2px; }
 .live-panmode-label { font-size: 10px; font-weight: 800; letter-spacing: .05em; color: var(--mrq-muted); }
-.live-panmode-btns { display: flex; background: #080d14; border: 1px solid var(--mrq-border); border-radius: 8px; padding: 3px; gap: 3px; }
-.live-panmode-btns button { background: transparent; border: none; color: var(--mrq-muted); border-radius: 6px; padding: 4px 5px; font-size: 8px; font-weight: 800; letter-spacing: .01em; cursor: pointer; white-space: nowrap; }
+.live-panmode-btns { display: flex; background: #080d14; border: 1px solid var(--mrq-border); border-radius: 8px; padding: 2px; gap: 2px; }
+.live-panmode-btns button { background: transparent; border: none; color: var(--mrq-muted); border-radius: 6px; padding: 3px 3px; font-size: 7.5px; font-weight: 800; letter-spacing: 0; cursor: pointer; white-space: nowrap; }
 .live-panmode-btns button:hover { color: var(--mrq-text); }
 .live-panmode-btns button.active { background: #173b4a; color: var(--mrq-cyan); box-shadow: inset 0 0 0 1px #2b7ea6, 0 0 10px rgba(66,217,255,.25); }
 

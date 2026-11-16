@@ -726,8 +726,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       releaseMs: params.releaseMs,
     });
     const total = Math.max(1, pts[pts.length - 1].t);
-    const W = 92;
-    const H = 44;
+    const W = 60;
+    const H = 36;
     const px = pts.map((p) => `${(4 + (p.t / total) * (W - 8)).toFixed(1)},${(H - 4 - p.level * (H - 10)).toFixed(1)}`);
     return (
       <div className="live-ahdsr">
@@ -758,7 +758,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     return (
       <div className="live-velcurve">
         <span className="knob-label">CURVA DE VELOCIDADE</span>
-        <svg viewBox="0 0 100 48" width="100" height="48" aria-hidden="true">
+        <svg viewBox="0 0 100 48" width="48" height="24" aria-hidden="true">
           <line x1="4" y1="44" x2="96" y2="44" stroke="#2a313b" strokeWidth="1" />
           <line x1="4" y1="44" x2="4" y2="4" stroke="#2a313b" strokeWidth="1" />
           <polyline points={pts.join(' ')} fill="none" stroke="#54c9ef" strokeWidth="2" strokeLinejoin="round" />
@@ -1049,13 +1049,13 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 {renderAhdsrGraph()}
                 <div className="live-knob-group">
                   {renderPower('eq', 'EQ')}
-                  {renderKnob('eqLowDb')}
-                  {renderKnob('eqMidDb')}
-                  {renderKnob('eqHighDb')}
+                  {renderKnob('eqLowDb', 'sm')}
+                  {renderKnob('eqMidDb', 'sm')}
+                  {renderKnob('eqHighDb', 'sm')}
                 </div>
                 <div className="live-knob-group">
                   {renderPower('drive', 'DRIVE')}
-                  {renderKnob('driveDb')}
+                  {renderKnob('driveDb', 'sm')}
                 </div>
                 {renderVelocityCurve()}
               </div>

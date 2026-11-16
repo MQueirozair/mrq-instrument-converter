@@ -545,3 +545,21 @@ conteúdo (1032px) não cabia na janela (720px), exigindo scroll.
 - **Validação:** screenshots Playwright em 1280×720, 1366×768, 1600×900
   e 1920×1080 — layout íntegro, sem overflow, em todos. lint + build +
   59/59 testes passando. Nenhum DSP alterado.
+
+## 24. v0.2.33 — Linha de knobs em 1 linha com folga (1150px+)
+
+A "Curva de Velocidade" caía para a 2ª linha em janelas menores,
+quebrando o alinhamento. Compactação adicional para garantir 1 linha
+com folga:
+
+- **Knobs menores ainda:** corpos sm 30 / md 40 / lg 48px, rótulos
+  7.5px, min-widths reduzidos — a linha principal (12 knobs + panmode +
+  gráficos AHDSR/velocidade) agora cabe em **1 linha a partir de
+  1150px** de largura (antes só em 1280px+).
+- **Gráficos mais estreitos:** AHDSR 60px, velocidade 48px (SVGs
+  ajustados para não estourar o container).
+- **EQ/Drive em sm** (agrupados com botões de bypass), panmode e gaps
+  mais justos.
+- **Altura total 693px em 1280×720** — tudo visível sem scroll, com
+  folga. Validado em 1150/1200/1280/1366/1920px. lint + build + 59/59
+  testes OK. Nenhum DSP alterado.
