@@ -112,19 +112,19 @@ const FX_MODULES: Record<string, EffectModuleConfig[]> = {
     { effect: LIVE_EFFECTS.find((e) => e.id === 'stereo')!, main: 'stereo' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'delay')!, main: 'delayFeedback' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'chorus')!, main: 'chorusRateHz' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'phaser')!, main: 'phaserMix', slider: 'phaserDepth', extras: ['phaserRate'] },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'flanger')!, main: 'flangerMix', slider: 'flangerDepth', extras: ['flangerRate', 'flangerFeedback'] },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'tremolo')!, main: 'tremoloDepth', slider: 'tremoloRate' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'crush')!, main: 'crushMix', slider: 'crushBits', extras: ['crushRate'] },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'phaser')!, main: 'phaserMix', slider: 'phaserDepth', sliderLabel: 'Depth', extras: ['phaserRate'] },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'flanger')!, main: 'flangerMix', slider: 'flangerDepth', sliderLabel: 'Depth', extras: ['flangerRate', 'flangerFeedback'] },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'tremolo')!, main: 'tremoloDepth', slider: 'tremoloRate', sliderLabel: 'Rate' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'crush')!, main: 'crushMix', slider: 'crushBits', sliderLabel: 'Bits', extras: ['crushRate'] },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'shimmer')!, main: 'shimmerMix' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'octaver')!, main: 'octaverMix' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'gate')!, main: 'gateThreshold' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'vibrato')!, main: 'vibratoDepth', slider: 'vibratoRate' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'autopan')!, main: 'autopanDepth', slider: 'autopanRate' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'vibrato')!, main: 'vibratoDepth', slider: 'vibratoRate', sliderLabel: 'Rate' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'autopan')!, main: 'autopanDepth', slider: 'autopanRate', sliderLabel: 'Rate' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'exciter')!, main: 'exciter' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'ring')!, main: 'ringMix', slider: 'ringFreq' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'ring')!, main: 'ringMix', slider: 'ringFreq', sliderLabel: 'Freq' },
     { effect: LIVE_EFFECTS.find((e) => e.id === 'tape')!, main: 'tape' },
-    { effect: LIVE_EFFECTS.find((e) => e.id === 'arp')!, main: 'arpRate', slider: 'arpRange' },
+    { effect: LIVE_EFFECTS.find((e) => e.id === 'arp')!, main: 'arpRate', slider: 'arpRange', sliderLabel: 'Alcance' },
   ],
   novidades: [
     { effect: LIVE_EFFECTS.find((e) => e.id === 'ecoVivo')!, main: 'ecoVivo' },
@@ -678,7 +678,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const loaded = path !== null && !loading && !error;
 
   /** Knob genérico da linha principal (com bypass desabilitando). */
-  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md') {
+  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md', hideLabel = false) {
     const def = LIVE_PARAM_DEFS[key];
     const fxId = effectIdForParam(key);
     return (
@@ -695,6 +695,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         onChange={(v) => updateParam(key, v)}
         disabled={fxId ? bypass[fxId] : false}
         size={size}
+        hideLabel={hideLabel}
       />
     );
   }
@@ -845,11 +846,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 <span>{loaded ? 'Instrumento Convertido' : 'Nenhum instrumento aberto'}</span>
               </div>
             </div>
-            <div className="live-status">
-              <span className="live-status-item ok"><CheckCircle2 size={16} /> <span><b>Pronto</b> para tocar</span></span>
-              <span className="live-status-item"><Waves size={16} /> <span><b>Polifonia</b> 128 vozes</span></span>
-              <span className="live-status-item"><Clock3 size={16} /> <span><b>Latência</b> {latencyMs ? `${latencyMs} ms` : '—'}</span></span>
-            </div>
+            {/* v0.2.34: header em linha única — Polifonia/Latência foram
+                pra barra de status (ver abaixo) pra caber tudo na tela. */}
             <div className="live-actions">
               {presets.length > 1 && (
                 <select
@@ -1007,7 +1005,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                 </div>
                 <div className="live-midi-field live-master-field">
                   <span>VOLUME MASTER</span>
-                  {renderKnob('volumeDb', 'sm')}
+                  {renderKnob('volumeDb', 'sm', true)}
                 </div>
               </div>
 
@@ -1073,7 +1071,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
               </div>
 
               {/* ---------- Módulos de efeito / painéis de informação ---------- */}
-              <div className="live-fx-modules">
+              <div className={`live-fx-modules${fxTab === 'ferramentas' ? ' tools-grid' : ''}`}>
                 {(fxTab === 'efeitos' || fxTab === 'ferramentas' || fxTab === 'novidades') &&
                   FX_MODULES[fxTab as FxTab].map((config) => (
                     <EffectModule
@@ -1083,6 +1081,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                       bypassed={bypass[config.effect.id]}
                       onParam={updateParam}
                       onToggleBypass={() => toggleBypass(config.effect.id)}
+                      compact={fxTab === 'ferramentas'}
                     />
                   ))}
                 {fxTab === 'novidades' && (
@@ -1185,6 +1184,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           <Usb size={13} /> Dispositivo MIDI: {midiConnected ? midiDevices[0] ?? 'conectado' : 'nenhum (use Conectar MIDI)'}
         </span>
         <span className="live-statusbar-item">Driver: Web Audio (Baixa Latência)</span>
+        <span className="live-statusbar-item"><Waves size={13} /> Polifonia 128 vozes</span>
+        <span className="live-statusbar-item"><Clock3 size={13} /> Latência {latencyMs ? `${latencyMs} ms` : '—'}</span>
         <span className="live-statusbar-item ok"><CheckCircle2 size={13} /> Sistema Pronto</span>
         <span className="live-statusbar-brand">MRQ — Tecnologia que Inspira sua Música</span>
       </div>

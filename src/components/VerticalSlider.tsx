@@ -16,11 +16,13 @@ interface VerticalSliderProps {
   format?: (v: number) => string;
   onChange: (v: number) => void;
   disabled?: boolean;
+  /** Altura da trilha em px (padrão 84) — v0.2.34: 44 no modo compacto. */
+  trackHeight?: number;
 }
 
 const TRACK_H = 84;
 
-export default function VerticalSlider({ label, value, min, max, step, defaultValue, format, onChange, disabled }: VerticalSliderProps) {
+export default function VerticalSlider({ label, value, min, max, step, defaultValue, format, onChange, disabled, trackHeight = TRACK_H }: VerticalSliderProps) {
   const trackRef = useRef<HTMLDivElement | null>(null);
   const valueRef = useRef(value);
   valueRef.current = value;
@@ -95,7 +97,7 @@ export default function VerticalSlider({ label, value, min, max, step, defaultVa
         onPointerMove={onPointerMove}
         onDoubleClick={() => !disabled && onChange(defaultValue)}
         onKeyDown={onKeyDown}
-        style={{ height: TRACK_H }}
+        style={{ height: trackHeight }}
       >
         <div className="vslider-fill" style={{ height: `${norm * 100}%` }} />
         <div className="vslider-handle" style={{ bottom: `calc(${norm * 100}% - 7px)` }} />

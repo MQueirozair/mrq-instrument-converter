@@ -33,6 +33,10 @@ interface EffectModuleProps {
   bypassed: boolean;
   onParam: (key: LiveParamKey, value: number) => void;
   onToggleBypass: () => void;
+  /** v0.2.34: modo compacto (aba Ferramentas) — knob principal `sm`,
+   *  extras inline na linha do corpo (sem linha extra abaixo), pra caber
+   *  17 módulos em 3 linhas sem estourar a altura da tela. */
+  compact?: boolean;
 }
 
 /** Curva de resposta do EQ de 3 bandas (graves/médios/agudos) em SVG —
@@ -68,13 +72,47 @@ function EqGraph({ params }: { params: LiveParams }) {
   );
 }
 
-export default function EffectModule({ config, params, bypassed, onParam, onToggleBypass }: EffectModuleProps) {
+/** Labels curtas dos extras no modo compacto (v0.2.34) — cabem na célula
+ *  do grid sem estourar a largura do módulo. */
+const SHORT_EXTRA_LABELS: Partial<Record<LiveParamKey, string>> = {
+  reverbPredelayMs: 'PRE-DELAY',
+  reverbColor: 'COR',
+  phaserRate: 'RATE',
+  flangerRate: 'RATE',
+  flangerFeedback: 'FB',
+  crushRate: 'TAXA',
+};
+
+export default function EffectModule({ config, params, bypassed, onParam, onToggleBypass, compact }: EffectModuleProps) {
   const { effect, title, main, slider, sliderLabel, graph, extras } = config;
   const mainDef = LIVE_PARAM_DEFS[main];
   const sliderDef = slider ? LIVE_PARAM_DEFS[slider] : null;
 
+  const renderExtra = (key: LiveParamKey) => {
+    const def = LIVE_PARAM_DEFS[key];
+    // v0.2.34: no modo compacto, labels curtas (o nome do módulo já diz o
+    // efeito; o tooltip do knob mostra o nome completo).
+    const label = compact ? (SHORT_EXTRA_LABELS[key] ?? def.label) : def.label;
+    return (
+      <Knob
+        key={key}
+        label={label}
+        value={params[key]}
+        min={def.min}
+        max={def.max}
+        step={def.step}
+        defaultValue={def.default}
+        format={def.format}
+        unit={def.unit}
+        onChange={(v) => onParam(key, v)}
+        disabled={bypassed}
+        size="sm"
+      />
+    );
+  };
+
   return (
-    <div className={`fx-module${bypassed ? ' bypassed' : ''}`}>
+    <div className={`fx-module${bypassed ? ' bypassed' : ''}${compact ? ' compact' : ''}`}>
       <div className="fx-module-head">
         <span className="fx-module-name">{title ?? effect.label}</span>
         <button
@@ -99,7 +137,7 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
           unit={mainDef.unit}
           onChange={(v) => onParam(main, v)}
           disabled={bypassed}
-          size="md"
+          size={compact ? 'sm' : 'md'}
           hideLabel
         />
         {sliderDef && slider && (
@@ -113,31 +151,17 @@ export default function EffectModule({ config, params, bypassed, onParam, onTogg
             format={sliderDef.format}
             onChange={(v) => onParam(slider, v)}
             disabled={bypassed}
+            trackHeight={compact ? 44 : undefined}
           />
         )}
         {graph === 'eq' && <EqGraph params={params} />}
+        {/* v0.2.34: no modo compacto os extras ficam inline (sem linha
+            extra) pra não aumentar a altura do módulo. */}
+        {compact && extras && extras.length > 0 && extras.map(renderExtra)}
       </div>
-      {extras && extras.length > 0 && (
+      {!compact && extras && extras.length > 0 && (
         <div className="fx-module-extras">
-          {extras.map((key) => {
-            const def = LIVE_PARAM_DEFS[key];
-            return (
-              <Knob
-                key={key}
-                label={def.label}
-                value={params[key]}
-                min={def.min}
-                max={def.max}
-                step={def.step}
-                defaultValue={def.default}
-                format={def.format}
-                unit={def.unit}
-                onChange={(v) => onParam(key, v)}
-                disabled={bypassed}
-                size="sm"
-              />
-            );
-          })}
+          {extras.map(renderExtra)}
         </div>
       )}
     </div>

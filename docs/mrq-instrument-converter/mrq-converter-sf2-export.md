@@ -563,3 +563,31 @@ com folga:
 - **Altura total 693px em 1280×720** — tudo visível sem scroll, com
   folga. Validado em 1150/1200/1280/1366/1920px. lint + build + 59/59
   testes OK. Nenhum DSP alterado.
+
+## 25. v0.2.34 — Aba Ferramentas e botões da sidebar cabem na tela
+
+Dois problemas visuais reportados: (1) os botões "Atualizar Lista" /
+"Abrir Pasta" da sidebar estavam grandes demais (48px de altura e
+somando 191px numa sidebar de 188px — "Abrir Pasta" era cortado);
+(2) a aba **Ferramentas** (17 módulos) estourava a altura da tela em
+~400px, e a barra de status ficava sobreposta aos módulos.
+
+Correções:
+
+- **Sidebar:** botões compactos (23px de altura, fonte 11px, sem quebra
+  de linha) — cabem folgados na sidebar de 188px.
+- **Ferramentas em modo compacto:** knob principal `sm`, extras inline
+  na linha do corpo (sem linha extra abaixo), slider vertical de 44px
+  (nova prop `trackHeight` no `VerticalSlider`), labels curtas
+  (PRE-DELAY, COR, RATE, FB, TAXA, Depth, Bits, Freq, Alcance — o
+  tooltip do knob mostra o nome completo).
+- **Grid fixo de 6 colunas** na aba Ferramentas — 17 módulos sempre em
+  3 linhas (o flex-wrap quebrava em 4 linhas abaixo de 1280px).
+- **Header em linha única:** Polifonia/Latência saíram do header e foram
+  para a barra de status (que já tinha "Sistema Pronto"); banner sem
+  flex-grow e ações menores, com media query compacta até 1220px.
+- **Barra de status em linha única** (sem wrap) e dica do teclado em
+  1 linha.
+- **Resultado: página inteira em 720px exatos** (1280×720 e 1150×720),
+  nas abas Efeitos e Ferramentas — tudo visível, sem scroll e sem
+  sobreposição. lint + build + 59/59 testes OK. Nenhum DSP alterado.
