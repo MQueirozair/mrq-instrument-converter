@@ -606,3 +606,21 @@ Validação em navegador com instrumento sintético: todas as sete abas em
 1150, 1280, 1366 e 1920px por 720px; sem rolagem, sem sobreposição da
 barra e sem overflow nos corpos dos módulos de Ferramentas. Bypass do Phaser
 testado alternando e restaurando o estado. Sem alteração do DSP.
+
+
+## 27. v0.2.36 — Rótulos e ajustes das curvas
+
+Rótulos e resumos dos gráficos sobrepunham controles vizinhos. As curvas agora
+têm títulos dimensionados em seus próprios contêineres, e os knobs da linha
+principal usam rótulos compactos, preservando nomes completos nos tooltips e
+no leitor de tela. Cada gráfico oferece um botão Ajustar: no envelope, a
+janela contém controles Attack, Hold, Decay, Sustain e Release; na velocidade,
+contém o controle da curva. Os gráficos ampliados refletem os mesmos parâmetros
+existentes, que alimentam o motor e são salvos por instrumento. Não houve
+alteração no DSP; os gráficos não são arrastáveis nesta versão.
+
+Verificações em navegador com instrumento sintético: sete abas em 1150, 1280,
+1366, 1600 e 1920 por 720px, sem colisão de rótulos, sem rolagem vertical e
+sem sobreposição da barra; alterações de envelope/velocidade por teclado,
+redesenho da curva e persistência ao reabrir. Lint, build e 59 testes de
+controles ao vivo passaram.

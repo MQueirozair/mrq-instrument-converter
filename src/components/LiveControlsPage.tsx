@@ -149,6 +149,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const [params, setParams] = useState<LiveParams>(() => defaultLiveParams());
   const [bypass, setBypass] = useState<LiveBypass>(() => defaultLiveBypass());
   const [fxTab, setFxTab] = useState<FxTab>('efeitos');
+  const [curveEditor, setCurveEditor] = useState<'envelope' | 'velocity' | null>(null);
   const [activeNotes, setActiveNotes] = useState<ReadonlySet<number>>(new Set());
   const [midiDevices, setMidiDevices] = useState<string[]>([]);
   const [midiConnected, setMidiConnected] = useState(false);
@@ -678,7 +679,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
   const loaded = path !== null && !loading && !error;
 
   /** Knob genérico da linha principal (com bypass desabilitando). */
-  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md', hideLabel = false) {
+  function renderKnob(key: LiveParamKey, size: 'sm' | 'md' | 'lg' = 'md', hideLabel = false, displayLabel?: string) {
     const def = LIVE_PARAM_DEFS[key];
     const fxId = effectIdForParam(key);
     return (
@@ -696,6 +697,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
         disabled={fxId ? bypass[fxId] : false}
         size={size}
         hideLabel={hideLabel}
+        displayLabel={displayLabel}
       />
     );
   }
@@ -718,7 +720,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
 
   /** Gráfico do envelope AHDSR (SVG, 5 estágios) — espelha o DSP real
    *  (LiveInstrumentEngine agenda os mesmos estágios com ramps). */
-  function renderAhdsrGraph() {
+  function renderAhdsrGraph(expanded = false) {
     const pts = ahdsrCurvePoints({
       attackMs: params.attackMs,
       holdMs: params.holdMs,
@@ -731,8 +733,8 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
     const H = 36;
     const px = pts.map((p) => `${(4 + (p.t / total) * (W - 8)).toFixed(1)},${(H - 4 - p.level * (H - 10)).toFixed(1)}`);
     return (
-      <div className="live-ahdsr">
-        <span className="knob-label">ENVELOPE AHDSR</span>
+      <div className={`live-ahdsr${expanded ? ' expanded' : ''}`}>
+        <span className="live-curve-label">ENVELOPE<br />AHDSR</span>
         <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
           <line x1="4" y1={H - 4} x2={W - 4} y2={H - 4} stroke="#2a313b" strokeWidth="1" />
           <polyline points={px.join(' ')} fill="none" stroke="#54c9ef" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
@@ -740,13 +742,13 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
             <circle key={i} cx={4 + (p.t / total) * (W - 8)} cy={H - 4 - p.level * (H - 10)} r="2.2" fill="#0c1220" stroke="#54c9ef" strokeWidth="1.4" />
           ))}
         </svg>
-        <span className="live-ahdsr-val">A {Math.round(params.attackMs)} · H {Math.round(params.holdMs)} · D {Math.round(params.decayMs)} · S {Math.round(params.sustain)}% · R {Math.round(params.releaseMs)}</span>
+        {!expanded && <button type="button" className="live-curve-edit" aria-label="Ajustar envelope AHDSR" onClick={() => setCurveEditor('envelope')}>Ajustar</button>}
       </div>
     );
   }
 
   /** Gráfico da curva de velocity (SVG) — espelha applyVelocityCurve. */
-  function renderVelocityCurve() {
+  function renderVelocityCurve(expanded = false) {
     const curve = params.velCurve;
     const pts: string[] = [];
     for (let i = 0; i <= 24; i++) {
@@ -757,14 +759,14 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
       pts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
     }
     return (
-      <div className="live-velcurve">
-        <span className="knob-label">CURVA DE VELOCIDADE</span>
+      <div className={`live-velcurve${expanded ? ' expanded' : ''}`}>
+        <span className="live-curve-label">CURVA DE<br />VELOCIDADE</span>
         <svg viewBox="0 0 100 48" width="48" height="24" aria-hidden="true">
           <line x1="4" y1="44" x2="96" y2="44" stroke="#2a313b" strokeWidth="1" />
           <line x1="4" y1="44" x2="4" y2="4" stroke="#2a313b" strokeWidth="1" />
           <polyline points={pts.join(' ')} fill="none" stroke="#54c9ef" strokeWidth="2" strokeLinejoin="round" />
         </svg>
-        <span className="live-velcurve-val">{curve > 0 ? `+${curve}` : curve} · {curve === 0 ? 'Linear' : curve > 0 ? 'Expande' : 'Equaliza'}</span>
+        {!expanded && <button type="button" className="live-curve-edit" aria-label="Ajustar curva de velocidade" onClick={() => setCurveEditor('velocity')}>Ajustar</button>}
       </div>
     );
   }
@@ -1011,7 +1013,7 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
 
               {/* ---------- Linha principal de knobs (foto) ---------- */}
               <div className="live-knobs live-knobs-main">
-                {renderKnob('volumeDb')}
+                {renderKnob('volumeDb', 'md', false, 'VOLUME')}
                 {renderKnob('pan')}
                 {/* v0.2.26: seletor de modo de pan — BALANCE (padrão) | STEREO PAN */}
                 <div className="live-panmode">
@@ -1035,25 +1037,25 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
                     </button>
                   </div>
                 </div>
-                {renderKnob('tuneCents')}
+                {renderKnob('tuneCents', 'md', false, 'AFINAÇÃO')}
                 {/* v0.2.31: envelope AHDSR completo (Attack | Hold | Decay | Sustain | Release) */}
                 <div className="live-knob-group live-env-group">
-                  {renderKnob('attackMs', 'sm')}
-                  {renderKnob('holdMs', 'sm')}
-                  {renderKnob('decayMs', 'sm')}
-                  {renderKnob('sustain', 'sm')}
-                  {renderKnob('releaseMs', 'sm')}
+                  {renderKnob('attackMs', 'sm', false, 'ATAQUE')}
+                  {renderKnob('holdMs', 'sm', false, 'HOLD')}
+                  {renderKnob('decayMs', 'sm', false, 'DECAY')}
+                  {renderKnob('sustain', 'sm', false, 'SUSTAIN')}
+                  {renderKnob('releaseMs', 'sm', false, 'RELEASE')}
                 </div>
                 {renderAhdsrGraph()}
                 <div className="live-knob-group">
                   {renderPower('eq', 'EQ')}
-                  {renderKnob('eqLowDb', 'sm')}
-                  {renderKnob('eqMidDb', 'sm')}
-                  {renderKnob('eqHighDb', 'sm')}
+                  {renderKnob('eqLowDb', 'sm', false, 'GRAVES')}
+                  {renderKnob('eqMidDb', 'sm', false, 'MÉDIOS')}
+                  {renderKnob('eqHighDb', 'sm', false, 'AGUDOS')}
                 </div>
                 <div className="live-knob-group">
                   {renderPower('drive', 'DRIVE')}
-                  {renderKnob('driveDb', 'sm')}
+                  {renderKnob('driveDb', 'sm', false, 'DRIVE')}
                 </div>
                 {renderVelocityCurve()}
               </div>
@@ -1177,6 +1179,34 @@ export default function LiveControlsPage({ initialPath, onClose }: LiveControlsP
           )}
         </div>
       </div>
+
+      {curveEditor && (
+        <div className="live-curve-overlay" onClick={() => setCurveEditor(null)}>
+          <section className="live-curve-dialog" role="dialog" aria-modal="true"
+            aria-labelledby="live-curve-dialog-title" onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => { if (event.key === 'Escape') setCurveEditor(null); }}>
+            <div className="live-curve-dialog-head">
+              <h2 id="live-curve-dialog-title">{curveEditor === 'envelope' ? 'Ajustar envelope AHDSR' : 'Ajustar curva de velocidade'}</h2>
+              <button type="button" className="btn ghost small" onClick={() => setCurveEditor(null)} autoFocus>Fechar</button>
+            </div>
+            <p>{curveEditor === 'envelope' ? 'Controle cada estágio do envelope. Os ajustes também aparecem na linha principal.' : 'Ajuste como a força da tecla afeta a velocidade. Zero é linear.'}</p>
+            <div className="live-curve-dialog-graph">{curveEditor === 'envelope' ? renderAhdsrGraph(true) : renderVelocityCurve(true)}</div>
+            <div className="live-curve-dialog-controls">
+              {curveEditor === 'envelope' ? <>
+                {renderKnob('attackMs', 'md', false, 'ATAQUE')}
+                {renderKnob('holdMs', 'md', false, 'HOLD')}
+                {renderKnob('decayMs', 'md', false, 'DECAY')}
+                {renderKnob('sustain', 'md', false, 'SUSTAIN')}
+                {renderKnob('releaseMs', 'md', false, 'RELEASE')}
+              </> : <>
+                {renderKnob('velCurve', 'md', false, 'CURVA')}
+                <span className="live-curve-description">{params.velCurve > 0 ? `+${params.velCurve}` : params.velCurve} · {params.velCurve === 0 ? 'Linear' : params.velCurve > 0 ? 'Expande' : 'Equaliza'}</span>
+              </>}
+            </div>
+            <p>Arraste o controle, use as setas ou clique no valor para digitar. Duplo clique restaura o padrão.</p>
+          </section>
+        </div>
+      )}
 
       {/* ---------- Barra de status ---------- */}
       <div className="live-statusbar">

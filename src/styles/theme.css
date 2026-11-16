@@ -2503,3 +2503,27 @@ input[type="range"]:not(.rack-fader):not(.mixer-fader):not(.rack-wheel)::-moz-ra
   .converter-format-picker { width: 100%; }
   .converter-format-choice { flex: 1 1 auto; }
 }
+
+/* Curvas: rótulos e gráficos confinados ao próprio espaço. */
+.live-knobs-main .mrq-knob-control { flex: 0 0 auto; }
+.live-knobs-main .mrq-knob-label { white-space: nowrap; }
+.live-env-group { gap: 3px; }
+.live-ahdsr, .live-velcurve { flex: 0 0 auto; align-items: center; gap: 2px; min-width: 0; }
+.live-ahdsr { width: 64px; }
+.live-velcurve { width: 70px; }
+.live-curve-label { display: block; width: 100%; color: var(--mrq-muted); font-size: 8px; line-height: 1.1; font-weight: 800; text-align: center; }
+.live-curve-edit { background: #14283d; border: 1px solid #31577a; color: #d9f5ff; border-radius: 4px; font-size: 9px; line-height: 1; padding: 3px 6px; cursor: pointer; }
+.live-curve-edit:hover, .live-curve-edit:focus-visible { border-color: var(--mrq-cyan); }
+.live-curve-overlay { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 16px; background: #02060ccc; }
+.live-curve-dialog { width: min(520px, 100%); background: #101a28; color: var(--mrq-text); border: 1px solid #31577a; border-radius: 12px; padding: 18px; box-shadow: 0 10px 50px #000c; }
+.live-curve-dialog-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.live-curve-dialog h2 { font-size: 16px; margin: 0; }
+.live-curve-dialog p { font-size: 12px; line-height: 1.45; color: var(--mrq-muted); }
+.live-curve-dialog-controls { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; padding: 10px 0; }
+.live-curve-dialog-controls .mrq-knob-label { font-size: 9px; }
+.live-curve-description { font-size: 12px; color: var(--mrq-text); }
+
+.live-curve-dialog-graph { display: flex; justify-content: center; padding: 4px 0; }
+.live-curve-dialog-graph .expanded { width: 180px; }
+.live-curve-dialog-graph .expanded svg { width: 180px; height: 100px; }
+.live-curve-dialog-graph .live-curve-label { font-size: 10px; }

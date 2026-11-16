@@ -30,11 +30,13 @@ interface KnobProps {
   unit?: string;
   /** Esconde o rótulo acima do knob (módulos de efeito) — v0.2.30. */
   hideLabel?: boolean;
+  /** Rótulo curto opcional; o nome completo continua no tooltip e acessibilidade. */
+  displayLabel?: string;
 }
 
 const SIZES: Record<KnobSize, number> = { sm: 30, md: 40, lg: 48 };
 
-export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit, hideLabel }: KnobProps) {
+export default function Knob({ label, value, min, max, step, defaultValue, format, onChange, disabled, size = 'md', unit, hideLabel, displayLabel }: KnobProps) {
   const dragRef = useRef<{ startY: number; startValue: number } | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const valueRef = useRef(value);
@@ -113,7 +115,7 @@ export default function Knob({ label, value, min, max, step, defaultValue, forma
 
   return (
     <div className={`mrq-knob-control knob-${size}${disabled ? ' disabled' : ''}`} ref={rootRef}>
-      {!hideLabel && <span className="mrq-knob-label">{label}</span>}
+      {!hideLabel && <span className="mrq-knob-label" title={label}>{displayLabel ?? label}</span>}
       <div
         className="mrq-knob"
         style={knobStyle}
