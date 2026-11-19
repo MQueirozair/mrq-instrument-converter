@@ -38,7 +38,8 @@
     "test:converted-instruments": "node scripts/test-converted-instruments.mjs",
     "test:live-controls": "node scripts/test-live-controls.mjs",
     "test:midi-curves": "node scripts/test-midi-curves.mjs && node scripts/test-midi-curves-engine.mjs",
-    "test:novidades-audio": "node scripts/test-novidades-audio.mjs"
+    "test:novidades-audio": "node scripts/test-novidades-audio.mjs",
+    "test:nord-release": "node scripts/test-nord-release.mjs"
   },
   "dependencies": {
     "@audio/synth-dx7": "^0.1.0",
