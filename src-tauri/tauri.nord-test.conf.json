@@ -1,0 +1,5 @@
+{
+  "productName": "MRQ Converter Teste Nord",
+  "identifier": "com.mrq.instrumentconverter.testenord",
+  "bundle": {"createUpdaterArtifacts": false, "macOS": {"signingIdentity": "-"}}
+}
